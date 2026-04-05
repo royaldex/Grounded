@@ -12,276 +12,139 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg:      #f7f4f0;
-    --sage:    #6aaf98;
-    --sage-l:  #e4f2ec;
-    --blue:    #6da0c8;
-    --blue-l:  #e3eef8;
-    --amber:   #d4a84b;
-    --amber-l: #faf0d8;
-    --plum:    #9a7ec8;
-    --plum-l:  #f0eafa;
-    --rose:    #d47a7a;
-    --rose-l:  #faeaea;
-    --text:    #2e2a26;
-    --muted:   #8e8a84;
-    --border:  #e8e3db;
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
-  html, body { height: 100%; overscroll-behavior: none; }
-  body { background: var(--bg); font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); }
-  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes popIn  { from { opacity:0; transform:scale(0.94); }        to { opacity:1; transform:scale(1); } }
-  @keyframes pulse  { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
-  .fade-up   { animation: fadeUp 0.3s ease both; }
-  .pop-in    { animation: popIn  0.25s cubic-bezier(.34,1.56,.64,1) both; }
-  .pulse-anim{ animation: pulse 1.5s ease infinite; }
-  .press { transition: transform 0.12s ease, opacity 0.12s ease; cursor: pointer; }
-  .press:active { transform: scale(0.95); opacity: 0.82; }
-  button { font-family: inherit; border: none; cursor: pointer; }
-  input, textarea { font-family: inherit; }
-  video, audio { border-radius: 14px; display: block; }
-  audio { width: 100%; }
-  video { width: 100%; }
-  ::-webkit-scrollbar { width: 0; }
+:root{--bg:#f7f4f0;--sage:#6aaf98;--sage-l:#e4f2ec;--blue:#6da0c8;--blue-l:#e3eef8;--amber:#d4a84b;--amber-l:#faf0d8;--plum:#9a7ec8;--plum-l:#f0eafa;--rose:#d47a7a;--rose-l:#faeaea;--text:#2e2a26;--muted:#8e8a84;--border:#e8e3db;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;overscroll-behavior:none;}
+body{background:var(--bg);font-family:'Nunito',-apple-system,BlinkMacSystemFont,sans-serif;color:var(--text);}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(0.94)}to{opacity:1;transform:scale(1)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.fade-up{animation:fadeUp 0.3s ease both}
+.pop-in{animation:popIn 0.25s cubic-bezier(.34,1.56,.64,1) both}
+.pulse-anim{animation:pulse 1.5s ease infinite}
+.press{transition:transform 0.12s ease,opacity 0.12s ease;cursor:pointer}
+.press:active{transform:scale(0.95);opacity:0.82}
+button{font-family:inherit;border:none;cursor:pointer;}
+input,textarea{font-family:inherit;}
+video,audio{border-radius:14px;display:block;}
+audio{width:100%;}video{width:100%;}
+::-webkit-scrollbar{width:0;}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback, useMemo } = React;
+const {useState,useEffect,useRef,useCallback,useMemo} = React;
 
-// ─── INDEXED DB ───────────────────────────────────────────────────────────────
-// All blobs (audio, video, photos) go here — survives refresh, no size cap.
-// localStorage only holds metadata (text, timestamps, idbKey references).
+// ── IndexedDB for blobs (audio/video/photo) ──────────────────────────────────
+const IDB_NAME='grounded_media', IDB_STORE='blobs';
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(IDB_NAME,1);r.onupgradeneeded=e=>e.target.result.createObjectStore(IDB_STORE);r.onsuccess=e=>res(e.target.result);r.onerror=()=>rej(r.error);});}
+async function idbPut(key,blob){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).put(blob,key);tx.oncomplete=()=>{db.close();res();};tx.onerror=()=>{db.close();rej(tx.error);};});}
+async function idbGet(key){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readonly');const r=tx.objectStore(IDB_STORE).get(key);r.onsuccess=()=>{db.close();res(r.result);};r.onerror=()=>{db.close();rej(r.error);};});}
+async function idbDelete(key){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).delete(key);tx.oncomplete=()=>{db.close();res();};tx.onerror=()=>{db.close();rej(tx.error);};});}
+async function idbClear(){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).clear();tx.oncomplete=()=>{db.close();res();};tx.onerror=()=>{db.close();rej(tx.error);};});}
 
-const IDB_NAME  = 'grounded_media';
-const IDB_STORE = 'blobs';
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
-    req.onsuccess  = e => resolve(e.target.result);
-    req.onerror    = () => reject(req.error);
-  });
-}
-async function idbPut(key, blob) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put(blob, key);
-    tx.oncomplete = () => { db.close(); res(); };
-    tx.onerror    = () => { db.close(); rej(tx.error); };
-  });
-}
-async function idbGet(key) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx  = db.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => { db.close(); res(req.result); };
-    req.onerror   = () => { db.close(); rej(req.error); };
-  });
-}
-async function idbDelete(key) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).delete(key);
-    tx.oncomplete = () => { db.close(); res(); };
-    tx.onerror    = () => { db.close(); rej(tx.error); };
-  });
-}
-async function idbClear() {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).clear();
-    tx.oncomplete = () => { db.close(); res(); };
-    tx.onerror    = () => { db.close(); rej(tx.error); };
-  });
-}
-
-// Hook: given an idbKey string, loads blob from IDB and returns a live object URL.
-// URL is revoked on unmount. Returns null while loading.
-function useIDBUrl(idbKey) {
-  const [url, setUrl] = useState(null);
-  useEffect(() => {
-    if (!idbKey) { setUrl(null); return; }
+function useIDBUrl(idbKey){
+  const [url,setUrl]=useState(null);
+  useEffect(()=>{
+    if(!idbKey){setUrl(null);return;}
     let objectUrl;
-    idbGet(idbKey).then(blob => {
-      if (blob) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); }
-      else       { setUrl(null); }
-    }).catch(() => setUrl(null));
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [idbKey]);
+    idbGet(idbKey).then(blob=>{if(blob){objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);}else{setUrl(null);}}).catch(()=>setUrl(null));
+    return()=>{if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[idbKey]);
   return url;
 }
 
-// ─── LOCAL STORAGE (metadata only) ───────────────────────────────────────────
-const LS_KEY  = 'grounded_v1';
-const DEFAULTS = {
-  memories:        [],   // { id, type, text, idbKey, timestamp, tags[] }
-  medications:     [],   // { id, name, logs[] }
-  anchorVideos:    [],   // { id, type, idbKey, timestamp }
-  defaultAnchorId: null,
-  safeMessage:     'You are safe.',
+// ── localStorage (metadata only) ─────────────────────────────────────────────
+const LS_KEY='grounded_v2';
+const DEFAULTS={
+  memories:[],        // {id,type,text,idbKey,timestamp,tags[]}
+  medications:[],     // {id,name,logs[]}
+  anchorVideos:[],    // {id,type,idbKey,timestamp}
+  defaultAnchorId:null,
+  safeMessage:'You are safe.',
   groundingMessage:'Take a breath. You are here. This moment is real.',
-  showSafeMessage: true,
-  // ── Unified log ──────────────────────────────────────────────────────────
-  // Single source of truth for every event. All features append here.
-  // { id, timestamp, type, label, detail }
-  logs: [],
-  // ── Tasks / reminders ────────────────────────────────────────────────────
-  // { id, timestamp, text, dueAt (epoch ms|null), completed, completedAt }
-  tasks: [],
+  showSafeMessage:true,
+  logs:[],            // {id,timestamp,type,label,detail}
+  tasks:[],           // {id,timestamp,text,recur,days[],time,onceDate,nextDueAt,lastFiredAt,active}
 };
 
-function useStore() {
-  const [data, setData] = useState(() => {
-    try { const s = localStorage.getItem(LS_KEY); return s ? { ...DEFAULTS, ...JSON.parse(s) } : { ...DEFAULTS }; }
-    catch { return { ...DEFAULTS }; }
+function useStore(){
+  const [data,setData]=useState(()=>{
+    try{const s=localStorage.getItem(LS_KEY);return s?{...DEFAULTS,...JSON.parse(s)}:{...DEFAULTS};}
+    catch{return{...DEFAULTS};}
   });
-  const update = useCallback((updater) => {
-    setData(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
-      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+  const update=useCallback(updater=>{
+    setData(prev=>{
+      const next=typeof updater==='function'?updater(prev):{...prev,...updater};
+      try{localStorage.setItem(LS_KEY,JSON.stringify(next));}catch{}
       return next;
     });
-  }, []);
-  return [data, update];
+  },[]);
+  return [data,update];
 }
 
-// ─── UTILS ───────────────────────────────────────────────────────────────────
-// pushLog: append one event to the unified log. Call from any feature.
-// type examples: 'note','voice','photo','video','med_taken','task_created',
-//                'task_done','reminder_triggered'
-function pushLog(update, type, label, detail='') {
-  update(p => ({
-    ...p,
-    logs: [...(p.logs||[]), { id: Date.now().toString(), timestamp: Date.now(), type, label, detail }],
-  }));
-}
-function useLiveClock() {
-  const [t, setT] = useState(new Date());
-  useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
-  return t;
-}
-const fmt = {
-  time:    t => new Date(t).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
-  date:    t => new Date(t).toLocaleDateString([], { weekday:'long', month:'long', day:'numeric' }),
-  dateTime:t => new Date(t).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }),
+// ── Clock & formatting ───────────────────────────────────────────────────────
+function useLiveClock(){const[t,setT]=useState(new Date());useEffect(()=>{const id=setInterval(()=>setT(new Date()),1000);return()=>clearInterval(id);},[]);return t;}
+const fmt={
+  time:    t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+  date:    t=>new Date(t).toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'}),
+  dateTime:t=>new Date(t).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),
 };
 
-// ─── RECURRENCE ENGINE ───────────────────────────────────────────────────────
-// task.recur: 'once' | 'daily' | 'weekdays' | 'weekly' | 'custom'
-// task.days:  [0..6] (0=Sun) used by 'weekly' and 'custom'
-// task.time:  'HH:MM' 24h string
-// task.nextDueAt: epoch ms — when to next fire (computed here)
+// ── Recurrence engine ─────────────────────────────────────────────────────────
+// recur: 'once'|'daily'|'weekdays'|'weekly'|'custom'
+// days[]: [0..6] (0=Sun)   time: 'HH:MM'
 
-function parseTimeStr(hhmm) {
-  if (!hhmm) return null;
-  const [h,m] = hhmm.split(':').map(Number);
-  return { h, m };
-}
+function parseHHMM(hhmm){if(!hhmm)return null;const[h,m]=hhmm.split(':').map(Number);return{h,m};}
 
-// Returns next epoch ms >= afterTime when this task should fire.
-// Returns null if it should never fire again (once, already expired).
-function computeNextDue(task, afterTime = Date.now()) {
-  const t = parseTimeStr(task.time);
-  if (!t) return null; // no time = no auto-trigger
-
-  if (task.recur === 'once') {
-    // Use task.onceDate if set (YYYY-MM-DD), else the creation day
-    const base = task.onceDate ? new Date(task.onceDate + 'T00:00:00') : new Date(task.timestamp || afterTime);
-    base.setHours(t.h, t.m, 0, 0);
-    return base.getTime() > afterTime ? base.getTime() : null;
+function computeNextDue(task,afterTime=Date.now()){
+  const t=parseHHMM(task.time);
+  if(!t)return null;
+  if(task.recur==='once'){
+    const base=task.onceDate?new Date(task.onceDate+'T00:00:00'):new Date(task.timestamp||afterTime);
+    base.setHours(t.h,t.m,0,0);
+    return base.getTime()>afterTime?base.getTime():null;
   }
-
-  if (task.recur === 'daily') {
-    const d = new Date(afterTime);
-    d.setHours(t.h, t.m, 0, 0);
-    if (d.getTime() <= afterTime) d.setDate(d.getDate() + 1);
-    return d.getTime();
-  }
-
-  if (task.recur === 'weekdays') {
-    for (let i = 0; i <= 7; i++) {
-      const d = new Date(afterTime);
-      d.setDate(d.getDate() + i);
-      d.setHours(t.h, t.m, 0, 0);
-      const dow = d.getDay();
-      if (d.getTime() > afterTime && dow >= 1 && dow <= 5) return d.getTime();
-    }
-    return null;
-  }
-
-  if (task.recur === 'weekly') {
-    // Single day weekly
-    const targetDay = (task.days||[])[0];
-    if (targetDay == null) return null;
-    for (let i = 0; i <= 7; i++) {
-      const d = new Date(afterTime);
-      d.setDate(d.getDate() + i);
-      d.setHours(t.h, t.m, 0, 0);
-      if (d.getTime() > afterTime && d.getDay() === targetDay) return d.getTime();
-    }
-    return null;
-  }
-
-  if (task.recur === 'custom') {
-    const days = task.days || [];
-    if (!days.length) return null;
-    for (let i = 0; i <= 7; i++) {
-      const d = new Date(afterTime);
-      d.setDate(d.getDate() + i);
-      d.setHours(t.h, t.m, 0, 0);
-      if (d.getTime() > afterTime && days.includes(d.getDay())) return d.getTime();
-    }
-    return null;
+  const matchDow=task.recur==='daily'?()=>true
+    :task.recur==='weekdays'?d=>d>=1&&d<=5
+    :(task.recur==='weekly'||task.recur==='custom')?(d=>(task.days||[]).includes(d))
+    :()=>false;
+  for(let i=0;i<=7;i++){
+    const d=new Date(afterTime);d.setDate(d.getDate()+i);d.setHours(t.h,t.m,0,0);
+    if(d.getTime()>afterTime&&matchDow(d.getDay()))return d.getTime();
   }
   return null;
 }
 
-function recurLabel(task) {
-  if (task.recur === 'once')     return 'One time';
-  if (task.recur === 'daily')    return 'Every day';
-  if (task.recur === 'weekdays') return 'Mon – Fri';
-  if (task.recur === 'weekly')   {
-    const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const d = (task.days||[])[0];
-    return d != null ? `Every ${DAY_NAMES[d]}` : 'Weekly';
-  }
-  if (task.recur === 'custom') {
-    const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa'];
-    return (task.days||[]).map(d=>DAY_NAMES[d]).join(' · ') || 'Custom';
-  }
-  return '';
+function recurLabel(task){
+  if(task.recur==='once')    return'One time';
+  if(task.recur==='daily')   return'Every day';
+  if(task.recur==='weekdays')return'Mon – Fri';
+  if(task.recur==='weekly')  {const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return`Every ${dn[(task.days||[])[0]]||'?'}`;}
+  if(task.recur==='custom')  {const dn=['Su','Mo','Tu','We','Th','Fr','Sa'];return(task.days||[]).map(d=>dn[d]).join('·')||'Custom';}
+  return'';
 }
 
-// Does this task apply to a given day-of-week (0=Sun)?
-function taskOnDow(task, dow) {
-  if (task.recur === 'daily')    return true;
-  if (task.recur === 'weekdays') return dow >= 1 && dow <= 5;
-  if (task.recur === 'weekly')   return (task.days||[]).includes(dow);
-  if (task.recur === 'custom')   return (task.days||[]).includes(dow);
+function taskOnDow(task,dow){
+  if(task.recur==='daily')   return true;
+  if(task.recur==='weekdays')return dow>=1&&dow<=5;
+  if(task.recur==='weekly'||task.recur==='custom')return(task.days||[]).includes(dow);
   return false;
 }
 
-// ─── TAGS ────────────────────────────────────────────────────────────────────
-const TAGS = [
-  { id:'important', label:'Important',     emoji:'⭐', color:'#d47a7a', bg:'#faeaea' },
-  { id:'good',      label:'Good Moment',   emoji:'💚', color:'#6aaf98', bg:'#e4f2ec' },
-  { id:'remember',  label:'Remember This', emoji:'📌', color:'#6da0c8', bg:'#e3eef8' },
-  { id:'grounding', label:'Grounding',     emoji:'🌿', color:'#9a7ec8', bg:'#f0eafa' },
+// ── Tags ─────────────────────────────────────────────────────────────────────
+const TAGS=[
+  {id:'important',label:'Important',   emoji:'⭐',color:'#d47a7a',bg:'#faeaea'},
+  {id:'good',     label:'Good Moment', emoji:'💚',color:'#6aaf98',bg:'#e4f2ec'},
+  {id:'remember', label:'Remember This',emoji:'📌',color:'#6da0c8',bg:'#e3eef8'},
+  {id:'grounding',label:'Grounding',   emoji:'🌿',color:'#9a7ec8',bg:'#f0eafa'},
 ];
 
-// ─── ICONS ───────────────────────────────────────────────────────────────────
-const I = {
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const I={
   Home:    ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
-  Clock:   ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+  Clock:   ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   Anchor:  ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>,
   Pill:    ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>,
   Mic:     ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>,
@@ -297,1411 +160,1065 @@ const I = {
   Bell:    ()=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
 };
 
-// ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
-function Btn({ children, onClick, bg='#6aaf98', color='#fff', style={}, disabled }) {
-  return (
-    <button onClick={onClick} disabled={disabled} className="press flex items-center justify-center gap-2 rounded-2xl font-bold disabled:opacity-40"
-      style={{ background:bg, color, padding:'15px 20px', boxShadow:'0 4px 18px rgba(0,0,0,0.10)', fontSize:16, ...style }}>
-      {children}
+// ── Shared UI components ──────────────────────────────────────────────────────
+function Btn({children,onClick,bg='#6aaf98',color='#fff',style={},disabled}){
+  return <button onClick={onClick} disabled={disabled} className="press"
+    style={{background:bg,color,padding:'15px 20px',boxShadow:'0 4px 18px rgba(0,0,0,0.10)',fontSize:16,fontWeight:800,
+      borderRadius:18,display:'flex',alignItems:'center',justifyContent:'center',gap:8,...style}}>
+    {children}
+  </button>;
+}
+
+function Header({title,onBack}){
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'28px 20px 8px'}}>
+    <button onClick={onBack} className="press" style={{width:40,height:40,borderRadius:'50%',background:'#ede9e3',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <span style={{width:20,height:20,color:'var(--text)'}}><I.Back/></span>
     </button>
-  );
+    <h1 style={{fontSize:18,fontWeight:800}}>{title}</h1>
+    <div style={{width:40}}/>
+  </div>;
 }
 
-function Header({ title, onBack }) {
-  return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'28px 20px 8px' }}>
-      <button onClick={onBack} className="press" style={{ width:40, height:40, borderRadius:'50%', background:'#ede9e3', border:'none', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <span style={{ width:20, height:20, color:'var(--text)' }}><I.Back /></span>
-      </button>
-      <h1 style={{ fontSize:18, fontWeight:800 }}>{title}</h1>
-      <div style={{ width:40 }} />
-    </div>
-  );
+function TagChip({tag,active,onClick}){
+  return <button onClick={onClick} className="press"
+    style={{padding:'8px 14px',borderRadius:50,fontSize:13,fontWeight:700,border:'none',
+      background:active?tag.color:tag.bg,color:active?'#fff':tag.color}}>
+    {tag.emoji} {tag.label}
+  </button>;
 }
 
-// ── AlertBanner: soft in-app reminder notification, no harsh browser dialogs ──
-function AlertBanner({ alerts, onDismiss }) {
-  if (!alerts.length) return null;
-  const a = alerts[0];
-  return (
-    <div className="pop-in" style={{
-      position:'fixed', top:0, left:'50%', transform:'translateX(-50%)',
-      width:'100%', maxWidth:480, zIndex:999,
-      padding:'12px 16px',
-      background:'linear-gradient(135deg,#d4a84b,#e8c06a)',
-      boxShadow:'0 4px 24px rgba(0,0,0,0.18)',
-    }}>
-      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-        <span style={{ fontSize:28, flexShrink:0 }}>🔔</span>
-        <div style={{ flex:1 }}>
-          <p style={{ fontSize:13, fontWeight:800, color:'#5a3a00', letterSpacing:'0.06em' }}>REMINDER</p>
-          <p style={{ fontSize:16, fontWeight:800, color:'#3a2000', lineHeight:1.3, marginTop:2 }}>{a.text}</p>
-        </div>
-        <button onClick={()=>onDismiss(a.id)} className="press"
-          style={{ background:'rgba(255,255,255,0.35)', border:'none', borderRadius:50, width:36, height:36,
-            display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, fontWeight:900, color:'#5a3a00', flexShrink:0 }}>
-          ✓
-        </button>
-      </div>
-      {alerts.length > 1 && (
-        <p style={{ fontSize:12, color:'#7a5000', fontWeight:700, marginTop:6, textAlign:'center' }}>+{alerts.length-1} more</p>
-      )}
-    </div>
-  );
-}
-  return (
-    <button onClick={onClick} className="press"
-      style={{ padding:'8px 14px', borderRadius:50, fontSize:13, fontWeight:700, border:'none',
-        background: active ? tag.color : tag.bg, color: active ? '#fff' : tag.color }}>
-      {tag.emoji} {tag.label}
-    </button>
-  );
-}
-
-// ── MediaPlayer: loads blob from IDB and renders the right element ────────────
-function MediaPlayer({ idbKey, type, autoPlay=false, style={} }) {
-  const src = useIDBUrl(idbKey);
-  if (!idbKey) return null;
-  if (!src) return <p style={{ color:'var(--muted)', fontSize:13, fontWeight:600, padding:'8px 0' }}>Loading…</p>;
-  if (type === 'voice') return <audio controls src={src} />;
-  if (type === 'video') return <video controls autoPlay={autoPlay} src={src} style={{ maxHeight:280, ...style }} />;
-  if (type === 'photo') return <img src={src} alt="" style={{ width:'100%', borderRadius:12, maxHeight:280, objectFit:'cover', ...style }} />;
+// Loads a blob from IDB and renders audio/video/image
+function MediaPlayer({idbKey,type,autoPlay=false}){
+  const src=useIDBUrl(idbKey);
+  if(!idbKey)return null;
+  if(!src)return <p style={{color:'var(--muted)',fontSize:13,fontWeight:600,padding:'8px 0'}}>Loading…</p>;
+  if(type==='voice')return <audio controls src={src}/>;
+  if(type==='video')return <video controls autoPlay={autoPlay} src={src} style={{maxHeight:260}}/>;
+  if(type==='photo')return <img src={src} alt="" style={{width:'100%',borderRadius:12,maxHeight:280,objectFit:'cover'}}/>;
   return null;
 }
 
-// ── MemCard: tap to expand, renders media via MediaPlayer ─────────────────────
-const MEM_ICON = { note:'📝', voice:'🎤', photo:'📷', video:'🎥' };
+const MEM_ICON={note:'📝',voice:'🎤',photo:'📷',video:'🎥'};
 
-function MemCard({ mem, expanded, onToggle }) {
-  return (
-    <div onClick={onToggle} className="press" style={{ background:'#fff', borderRadius:18, marginBottom:10, boxShadow:'0 2px 14px rgba(0,0,0,0.065)', overflow:'hidden' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px' }}>
-        <span style={{ fontSize:22 }}>{MEM_ICON[mem.type] || '📝'}</span>
-        <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontSize:14, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-            {mem.type==='note' ? (mem.text||'—') : `${mem.type} recording`}
-          </p>
-          <p style={{ fontSize:12, color:'var(--muted)', marginTop:2 }}>{fmt.dateTime(mem.timestamp)}</p>
-        </div>
-        {(mem.tags||[]).slice(0,2).map(t => { const tag=TAGS.find(x=>x.id===t); return tag ? <span key={t} style={{ fontSize:16 }}>{tag.emoji}</span> : null; })}
-      </div>
-      {expanded && (
-        <div className="fade-up" style={{ padding:'0 16px 16px' }}>
-          {mem.type==='note'
-            ? <p style={{ fontSize:15, lineHeight:1.7 }}>{mem.text}</p>
-            : <MediaPlayer idbKey={mem.idbKey} type={mem.type} />
-          }
-          {(mem.tags||[]).length>0 && (
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
-              {mem.tags.map(t => { const tag=TAGS.find(x=>x.id===t); return tag ? <span key={t} style={{ fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:50, background:tag.bg, color:tag.color }}>{tag.emoji} {tag.label}</span> : null; })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── HOME ─────────────────────────────────────────────────────────────────────
-function HomeScreen({ data, navigate }) {
-  const now = useLiveClock();
-  const recent = useMemo(() => [...data.memories].sort((a,b)=>b.timestamp-a.timestamp).slice(0,3), [data.memories]);
-  const [expandedId, setExpandedId] = useState(null);
-
-  // Today's upcoming scheduled tasks
-  const todayUpcoming = useMemo(() => {
-    const todayDow = new Date().getDay();
-    const nowMs    = Date.now();
-    return (data.tasks||[])
-      .filter(t => t.active !== false && t.time && taskOnDow(t, todayDow))
-      .filter(t => {
-        // Only show ones that haven't fired yet today
-        if (!t.nextDueAt) return true;
-        return t.nextDueAt > nowMs || (t.nextDueAt && new Date(t.nextDueAt).toDateString() === new Date().toDateString());
-      })
-      .sort((a,b) => {
-        const ta = parseTimeStr(a.time), tb = parseTimeStr(b.time);
-        return (ta.h*60+ta.m) - (tb.h*60+tb.m);
-      })
-      .slice(0, 4);
-  }, [data.tasks]);
-
-  // Count of active reminders user set up
-  const activeCount = (data.tasks||[]).filter(t=>t.active!==false).length;
-
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:90 }}>
-      <div style={{ display:'flex', justifyContent:'flex-end', padding:'16px 20px 0' }}>
-        <button onClick={()=>navigate('settings')} className="press" style={{ width:40, height:40, borderRadius:'50%', background:'#ede9e3', border:'none', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <span style={{ width:18, height:18, color:'var(--muted)' }}><I.Settings /></span>
-        </button>
-      </div>
-
-      <div style={{ padding:'8px 22px 20px' }}>
-        <p style={{ fontSize:13, fontWeight:700, color:'var(--muted)', letterSpacing:'0.04em' }}>{fmt.date(now)}</p>
-        <p style={{ fontSize:58, fontWeight:900, color:'var(--text)', lineHeight:1.05, marginTop:4, letterSpacing:'-0.03em' }}>
-          {now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
+function MemCard({mem,expanded,onToggle}){
+  return <div onClick={onToggle} className="press"
+    style={{background:'#fff',borderRadius:18,marginBottom:10,boxShadow:'0 2px 14px rgba(0,0,0,0.065)',overflow:'hidden'}}>
+    <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px'}}>
+      <span style={{fontSize:22}}>{MEM_ICON[mem.type]||'📝'}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{fontSize:14,fontWeight:600,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          {mem.type==='note'?(mem.text||'—'):`${mem.type} recording`}
         </p>
-        {data.showSafeMessage && (
-          <div className="pop-in" style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:10,
-            background:'var(--sage-l)', color:'#3d8a72', borderRadius:50, padding:'8px 16px', fontSize:14, fontWeight:700 }}>
-            <span style={{ width:16, height:16, color:'#d47a7a', flexShrink:0 }}><I.Heart /></span>
-            {data.safeMessage}
-          </div>
-        )}
+        <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{fmt.dateTime(mem.timestamp)}</p>
       </div>
-
-      <div style={{ padding:'0 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-        {[
-          { id:'add',      label:'Add Memory',  emoji:'＋',  bg:'#6aaf98', note:'voice · photo · text · video' },
-          { id:'ground',   label:'Ground Me',   emoji:'⚓',  bg:'#6da0c8', note:'anchor & calm down' },
-          { id:'timeline', label:'Timeline',    emoji:'📋',  bg:'#d4a84b', note:'all events & notes' },
-          { id:'meds',     label:'Medications', emoji:'💊',  bg:'#9a7ec8', note:'log & track' },
-        ].map((item,i) => (
-          <button key={item.id} onClick={()=>navigate(item.id)} className="press"
-            style={{ background:item.bg, borderRadius:22, padding:'22px 16px', display:'flex', flexDirection:'column',
-              alignItems:'flex-start', border:'none', boxShadow:`0 6px 22px ${item.bg}55`,
-              animation:`fadeUp 0.3s ${i*0.06}s ease both` }}>
-            <span style={{ fontSize:30, marginBottom:8 }}>{item.emoji}</span>
-            <span style={{ fontSize:16, fontWeight:800, color:'#fff' }}>{item.label}</span>
-            <span style={{ fontSize:12, color:'rgba(255,255,255,0.75)', marginTop:3, fontWeight:600 }}>{item.note}</span>
-          </button>
-        ))}
-      </div>
-
-      <div style={{ padding:'12px 16px 0', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
-        <button onClick={()=>navigate('proof')} className="press"
-          style={{ background:'var(--rose-l)', borderRadius:16, padding:'12px 10px', border:'none', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-          <span style={{ fontSize:18 }}>💚</span>
-          <span style={{ fontSize:11, fontWeight:800, color:'var(--rose)', textAlign:'center', lineHeight:1.2 }}>Proof I'm Okay</span>
-        </button>
-        <button onClick={()=>navigate('reminders')} className="press" style={{ position:'relative',
-          background:'var(--amber-l)', borderRadius:16, padding:'12px 10px', border:'none', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-          <span style={{ fontSize:18 }}>🔔</span>
-          <span style={{ fontSize:11, fontWeight:800, color:'#a87030', textAlign:'center', lineHeight:1.2 }}>Reminders</span>
-          {activeCount>0 && <span style={{ position:'absolute', top:6, right:8, background:'var(--amber)', color:'#fff', fontSize:10, fontWeight:900, borderRadius:50, padding:'1px 6px' }}>{activeCount}</span>}
-        </button>
-        <button onClick={()=>navigate('calendar')} className="press"
-          style={{ background:'var(--blue-l)', borderRadius:16, padding:'12px 10px', border:'none', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-          <span style={{ fontSize:18 }}>📅</span>
-          <span style={{ fontSize:11, fontWeight:800, color:'var(--blue)', textAlign:'center', lineHeight:1.2 }}>Calendar</span>
-        </button>
-      </div>
-
-      {/* Today's schedule strip */}
-      {todayUpcoming.length > 0 && (
-        <div style={{ padding:'16px 16px 0' }}>
-          <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8 }}>Today's Schedule</p>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {todayUpcoming.map(task => (
-              <div key={task.id} onClick={()=>navigate('reminders')} className="press"
-                style={{ background:'#fff', borderRadius:14, padding:'11px 14px', boxShadow:'0 2px 10px rgba(0,0,0,0.06)', display:'flex', alignItems:'center', gap:10 }}>
-                <span style={{ fontSize:16 }}>🔔</span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.text}</p>
-                  <p style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginTop:1 }}>{task.time} · {recurLabel(task)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {recent.length>0 && (
-        <div style={{ padding:'16px 16px 0' }}>
-          <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:10 }}>Recent</p>
-          {recent.map(m => <MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>setExpandedId(expandedId===m.id?null:m.id)} />)}
-        </div>
-      )}
+      {(mem.tags||[]).slice(0,2).map(t=>{const tag=TAGS.find(x=>x.id===t);return tag?<span key={t} style={{fontSize:16}}>{tag.emoji}</span>:null;})}
     </div>
-  );
+    {expanded&&<div className="fade-up" style={{padding:'0 16px 16px'}}>
+      {mem.type==='note'
+        ?<p style={{fontSize:15,lineHeight:1.7}}>{mem.text}</p>
+        :<MediaPlayer idbKey={mem.idbKey} type={mem.type}/>
+      }
+      {(mem.tags||[]).length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:10}}>
+        {mem.tags.map(t=>{const tag=TAGS.find(x=>x.id===t);return tag?<span key={t} style={{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:50,background:tag.bg,color:tag.color}}>{tag.emoji} {tag.label}</span>:null;})}
+      </div>}
+    </div>}
+  </div>;
 }
 
-// ─── ADD MEMORY ───────────────────────────────────────────────────────────────
-function AddMemory({ data, update, navigate }) {
-  const [mode, setMode]     = useState(null);
-  const [text, setText]     = useState('');
-  const [tags, setTags]     = useState([]);
-  const [recording, setRec] = useState(false);
-  // previewURL = blob:// for live display only; blob = raw data to write to IDB
-  const [previewURL, setPrev] = useState(null);
-  const [blob, setBlob]       = useState(null);
-  const [saving, setSaving]   = useState(false);
-  const [done,   setDone]     = useState(false);
-  const vidRef   = useRef(null);
-  const recRef   = useRef(null);
-  const chunks   = useRef([]);
-  const photoRef = useRef(null);
+// Soft amber alert banner — no harsh browser popups
+function AlertBanner({alerts,onDismiss}){
+  if(!alerts.length)return null;
+  const a=alerts[0];
+  return <div className="pop-in" style={{
+    position:'fixed',top:0,left:'50%',transform:'translateX(-50%)',
+    width:'100%',maxWidth:480,zIndex:999,
+    padding:'14px 16px',
+    background:'linear-gradient(135deg,#d4a84b,#e8c06a)',
+    boxShadow:'0 4px 24px rgba(0,0,0,0.18)',
+  }}>
+    <div style={{display:'flex',alignItems:'center',gap:12}}>
+      <span style={{fontSize:28,flexShrink:0}}>🔔</span>
+      <div style={{flex:1}}>
+        <p style={{fontSize:11,fontWeight:900,color:'#5a3a00',letterSpacing:'0.08em'}}>REMINDER</p>
+        <p style={{fontSize:16,fontWeight:800,color:'#3a2000',lineHeight:1.3,marginTop:2}}>{a.text}</p>
+      </div>
+      <button onClick={()=>onDismiss(a.id)} className="press"
+        style={{background:'rgba(255,255,255,0.4)',border:'none',borderRadius:50,width:40,height:40,
+          display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:900,color:'#5a3a00',flexShrink:0}}>
+        ✓
+      </button>
+    </div>
+    {alerts.length>1&&<p style={{fontSize:12,color:'#7a5000',fontWeight:700,marginTop:6,textAlign:'center'}}>+{alerts.length-1} more reminder{alerts.length>2?'s':''}</p>}
+  </div>;
+}
 
-  function toggleTag(id) { setTags(p => p.includes(id) ? p.filter(t=>t!==id) : [...p, id]); }
-  function reset() { setPrev(null); setBlob(null); }
+// ── HOME ─────────────────────────────────────────────────────────────────────
+function HomeScreen({data,navigate}){
+  const now=useLiveClock();
+  const [expandedId,setExpandedId]=useState(null);
+  const recent=useMemo(()=>[...data.memories].sort((a,b)=>b.timestamp-a.timestamp).slice(0,3),[data.memories]);
 
-  async function startRec(type) {
-    try {
-      const constraints = type==='video' ? { audio:true, video:{ facingMode:'user' } } : { audio:true };
-      const s = await navigator.mediaDevices.getUserMedia(constraints);
-      if (type==='video' && vidRef.current) { vidRef.current.srcObject=s; vidRef.current.play(); }
-      chunks.current = [];
-      const mime = type==='video' ? 'video/webm' : 'audio/webm';
-      const rec  = new MediaRecorder(s, { mimeType: MediaRecorder.isTypeSupported(mime) ? mime : '' });
-      rec.ondataavailable = e => chunks.current.push(e.data);
-      rec.onstop = () => {
-        const b   = new Blob(chunks.current, { type: mime });
-        const url = URL.createObjectURL(b);
-        setBlob(b); setPrev(url);
-        if (type==='video' && vidRef.current) { vidRef.current.srcObject=null; vidRef.current.src=url; }
+  const todayDow=new Date().getDay();
+  const todaySchedule=useMemo(()=>(data.tasks||[])
+    .filter(t=>t.active!==false&&t.time&&taskOnDow(t,todayDow))
+    .sort((a,b)=>{const ta=parseHHMM(a.time)||{h:99,m:99},tb=parseHHMM(b.time)||{h:99,m:99};return(ta.h*60+ta.m)-(tb.h*60+tb.m);})
+    .slice(0,4)
+  ,[data.tasks]);
+
+  const activeCount=(data.tasks||[]).filter(t=>t.active!==false).length;
+
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:90}}>
+    <div style={{display:'flex',justifyContent:'flex-end',padding:'16px 20px 0'}}>
+      <button onClick={()=>navigate('settings')} className="press"
+        style={{width:40,height:40,borderRadius:'50%',background:'#ede9e3',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <span style={{width:18,height:18,color:'var(--muted)'}}><I.Settings/></span>
+      </button>
+    </div>
+
+    <div style={{padding:'4px 22px 18px'}}>
+      <p style={{fontSize:13,fontWeight:700,color:'var(--muted)',letterSpacing:'0.04em'}}>{fmt.date(now)}</p>
+      <p style={{fontSize:56,fontWeight:900,color:'var(--text)',lineHeight:1.05,marginTop:2,letterSpacing:'-0.03em'}}>
+        {now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+      </p>
+      {data.showSafeMessage&&<div className="pop-in" style={{display:'inline-flex',alignItems:'center',gap:8,marginTop:10,
+        background:'var(--sage-l)',color:'#3d8a72',borderRadius:50,padding:'8px 16px',fontSize:14,fontWeight:700}}>
+        <span style={{width:16,height:16,color:'#d47a7a',flexShrink:0}}><I.Heart/></span>
+        {data.safeMessage}
+      </div>}
+    </div>
+
+    {/* 4 main tiles */}
+    <div style={{padding:'0 16px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+      {[
+        {id:'add',     label:'Add Memory', emoji:'＋', bg:'#6aaf98',note:'voice · photo · text · video'},
+        {id:'ground',  label:'Ground Me',  emoji:'⚓', bg:'#6da0c8',note:'anchor & calm down'},
+        {id:'timeline',label:'Timeline',   emoji:'📋', bg:'#d4a84b',note:'all events & notes'},
+        {id:'meds',    label:'Medications',emoji:'💊', bg:'#9a7ec8',note:'log & track'},
+      ].map((item,i)=><button key={item.id} onClick={()=>navigate(item.id)} className="press"
+        style={{background:item.bg,borderRadius:22,padding:'22px 16px',display:'flex',flexDirection:'column',
+          alignItems:'flex-start',border:'none',boxShadow:`0 6px 22px ${item.bg}55`,
+          animation:`fadeUp 0.3s ${i*0.06}s ease both`}}>
+        <span style={{fontSize:30,marginBottom:8}}>{item.emoji}</span>
+        <span style={{fontSize:16,fontWeight:800,color:'#fff'}}>{item.label}</span>
+        <span style={{fontSize:12,color:'rgba(255,255,255,0.75)',marginTop:3,fontWeight:600}}>{item.note}</span>
+      </button>)}
+    </div>
+
+    {/* Secondary row */}
+    <div style={{padding:'12px 16px 0',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+      <button onClick={()=>navigate('proof')} className="press"
+        style={{background:'var(--rose-l)',borderRadius:16,padding:'12px 10px',border:'none',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
+        <span style={{fontSize:18}}>💚</span>
+        <span style={{fontSize:11,fontWeight:800,color:'var(--rose)',textAlign:'center',lineHeight:1.2}}>Proof I'm Okay</span>
+      </button>
+      <button onClick={()=>navigate('reminders')} className="press" style={{position:'relative',
+        background:'var(--amber-l)',borderRadius:16,padding:'12px 10px',border:'none',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
+        <span style={{fontSize:18}}>🔔</span>
+        <span style={{fontSize:11,fontWeight:800,color:'#a87030',textAlign:'center',lineHeight:1.2}}>Reminders</span>
+        {activeCount>0&&<span style={{position:'absolute',top:6,right:8,background:'var(--amber)',color:'#fff',fontSize:10,fontWeight:900,borderRadius:50,padding:'1px 6px'}}>{activeCount}</span>}
+      </button>
+      <button onClick={()=>navigate('anchor')} className="press"
+        style={{background:'var(--plum-l)',borderRadius:16,padding:'12px 10px',border:'none',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
+        <span style={{fontSize:18}}>🎬</span>
+        <span style={{fontSize:11,fontWeight:800,color:'var(--plum)',textAlign:'center',lineHeight:1.2}}>Anchor Videos</span>
+      </button>
+    </div>
+
+    {/* Today's schedule */}
+    {todaySchedule.length>0&&<div style={{padding:'16px 16px 0'}}>
+      <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:8}}>Today's Schedule</p>
+      {todaySchedule.map(task=><div key={task.id} onClick={()=>navigate('reminders')} className="press"
+        style={{background:'#fff',borderRadius:14,padding:'11px 14px',marginBottom:6,boxShadow:'0 2px 10px rgba(0,0,0,0.06)',display:'flex',alignItems:'center',gap:10}}>
+        <span style={{fontSize:16}}>🔔</span>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontSize:14,fontWeight:700,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.text}</p>
+          <p style={{fontSize:11,color:'var(--muted)',fontWeight:700,marginTop:1}}>{task.time} · {recurLabel(task)}</p>
+        </div>
+      </div>)}
+    </div>}
+
+    {/* Recent memories */}
+    {recent.length>0&&<div style={{padding:'16px 16px 0'}}>
+      <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Recent</p>
+      {recent.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>setExpandedId(expandedId===m.id?null:m.id)}/>)}
+    </div>}
+  </div>;
+}
+
+// ── ADD MEMORY ────────────────────────────────────────────────────────────────
+function AddMemory({data,update,navigate}){
+  const [mode,setMode]=useState(null);
+  const [text,setText]=useState('');
+  const [tags,setTags]=useState([]);
+  const [recording,setRec]=useState(false);
+  const [previewURL,setPrev]=useState(null);
+  const [blob,setBlob]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [done,setDone]=useState(false);
+  const vidRef=useRef(null),recRef=useRef(null),chunks=useRef([]),photoRef=useRef(null);
+
+  function toggleTag(id){setTags(p=>p.includes(id)?p.filter(t=>t!==id):[...p,id]);}
+  function reset(){setPrev(null);setBlob(null);}
+
+  async function startRec(type){
+    try{
+      const s=await navigator.mediaDevices.getUserMedia(type==='video'?{audio:true,video:{facingMode:'user'}}:{audio:true});
+      if(type==='video'&&vidRef.current){vidRef.current.srcObject=s;vidRef.current.play();}
+      chunks.current=[];
+      const mime=type==='video'?'video/webm':'audio/webm';
+      const rec=new MediaRecorder(s,{mimeType:MediaRecorder.isTypeSupported(mime)?mime:''});
+      rec.ondataavailable=e=>chunks.current.push(e.data);
+      rec.onstop=()=>{
+        const b=new Blob(chunks.current,{type:mime});const url=URL.createObjectURL(b);
+        setBlob(b);setPrev(url);
+        if(type==='video'&&vidRef.current){vidRef.current.srcObject=null;vidRef.current.src=url;}
         s.getTracks().forEach(t=>t.stop());
       };
-      rec.start(); recRef.current=rec; setRec(true);
-    } catch { setPrev('__no_permission__'); }
+      rec.start();recRef.current=rec;setRec(true);
+    }catch{setPrev('__noperm__');}
   }
+  function stopRec(){recRef.current?.stop();setRec(false);}
 
-  function stopRec() { recRef.current?.stop(); setRec(false); }
+  function handlePhoto(e){const f=e.target.files[0];if(!f)return;setPrev(URL.createObjectURL(f));setBlob(f);}
 
-  function handlePhoto(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setPrev(URL.createObjectURL(file));
-    setBlob(file);
-  }
-
-  async function save() {
-    if (mode==='note' && !text.trim()) return;
-    if (mode!=='note' && (!blob || previewURL==='__no_permission__')) return;
+  async function save(){
+    if(mode==='note'&&!text.trim())return;
+    if(mode!=='note'&&(!blob||previewURL==='__noperm__'))return;
     setSaving(true);
-    const id = Date.now().toString();
-    let idbKey = null;
-    if (mode !== 'note') {
-      idbKey = `mem_${id}`;
-      await idbPut(idbKey, blob);
-    }
-    const mem = { id, type:mode, text: mode==='note' ? text.trim() : '', idbKey, timestamp:Date.now(), tags };
-    // Derive a readable label for the log
-    const logLabel = mode==='note'
-      ? (text.trim().slice(0,60) + (text.trim().length>60?'…':''))
-      : `${mode} recording`;
-    update(p => ({
-      ...p,
-      memories: [...p.memories, mem],
-      // Auto-append to unified log
-      logs: [...(p.logs||[]), { id: `log_${id}`, timestamp: Date.now(), type: mode, label: logLabel, detail: '' }],
+    const id=Date.now().toString();
+    let idbKey=null;
+    if(mode!=='note'){idbKey=`mem_${id}`;await idbPut(idbKey,blob);}
+    const logLabel=mode==='note'?(text.trim().slice(0,60)+(text.trim().length>60?'…':'')):`${mode} recording`;
+    update(p=>({...p,
+      memories:[...p.memories,{id,type:mode,text:mode==='note'?text.trim():'',idbKey,timestamp:Date.now(),tags}],
+      logs:[...(p.logs||[]),{id:`log_${id}`,timestamp:Date.now(),type:mode,label:logLabel,detail:''}],
     }));
-    setDone(true);
-    setTimeout(()=>navigate('home'), 900);
+    setDone(true);setTimeout(()=>navigate('home'),900);
   }
 
-  if (done) return (
-    <div className="pop-in" style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'var(--sage-l)', gap:16 }}>
-      <div style={{ width:72, height:72, borderRadius:'50%', background:'#6aaf98', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <span style={{ width:36, height:36, color:'#fff' }}><I.Check /></span>
-      </div>
-      <p style={{ fontSize:22, fontWeight:800, color:'#3d8a72' }}>Saved ✓</p>
+  if(done)return <div className="pop-in" style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--sage-l)',gap:16}}>
+    <div style={{width:72,height:72,borderRadius:'50%',background:'#6aaf98',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <span style={{width:36,height:36,color:'#fff'}}><I.Check/></span>
     </div>
-  );
+    <p style={{fontSize:22,fontWeight:800,color:'#3d8a72'}}>Saved ✓</p>
+  </div>;
 
-  const labels  = { note:'Write Note', voice:'Record Voice', photo:'Take Photo', video:'Record Video' };
-  const canSave = mode==='note' ? text.trim().length>0 : (!!blob && previewURL!=='__no_permission__');
+  const labels={note:'Write Note',voice:'Record Voice',photo:'Take Photo',video:'Record Video'};
+  const canSave=mode==='note'?text.trim().length>0:(!!blob&&previewURL!=='__noperm__');
 
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', background:'var(--bg)', paddingBottom:100 }}>
-      <Header title={mode ? labels[mode] : 'Add Memory'} onBack={()=>{ if(mode){setMode(null);reset();}else navigate('home'); }} />
+  return <div className="fade-up" style={{minHeight:'100vh',background:'var(--bg)',paddingBottom:100}}>
+    <Header title={mode?labels[mode]:'Add Memory'} onBack={()=>{if(mode){setMode(null);reset();}else navigate('home');}}/>
+    {!mode&&<div style={{padding:'12px 16px 0',display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+      {[
+        {id:'voice',label:'Record Voice',icon:<I.Mic/>,  bg:'#fde8ef',color:'#c0507a'},
+        {id:'note', label:'Write Note',  icon:<I.Pen/>,  bg:'#e3eef8',color:'#4a80b0'},
+        {id:'photo',label:'Take Photo',  icon:<I.Camera/>,bg:'#e4f2ec',color:'#3d8a72'},
+        {id:'video',label:'Record Video',icon:<I.Video/>,bg:'#faf0d8',color:'#a87030'},
+      ].map((opt,i)=><button key={opt.id} onClick={()=>setMode(opt.id)} className="press"
+        style={{background:opt.bg,borderRadius:22,padding:'28px 16px',display:'flex',flexDirection:'column',
+          alignItems:'center',gap:12,border:'none',animation:`fadeUp 0.25s ${i*0.06}s ease both`}}>
+        <span style={{width:36,height:36,color:opt.color}}>{opt.icon}</span>
+        <span style={{fontSize:15,fontWeight:800,color:opt.color}}>{opt.label}</span>
+      </button>)}
+    </div>}
 
-      {!mode && (
-        <div style={{ padding:'12px 16px 0', display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-          {[
-            { id:'voice', label:'Record Voice', icon:<I.Mic />,    bg:'#fde8ef', color:'#c0507a' },
-            { id:'note',  label:'Write Note',   icon:<I.Pen />,    bg:'#e3eef8', color:'#4a80b0' },
-            { id:'photo', label:'Take Photo',   icon:<I.Camera />, bg:'#e4f2ec', color:'#3d8a72' },
-            { id:'video', label:'Record Video', icon:<I.Video />,  bg:'#faf0d8', color:'#a87030' },
-          ].map((opt,i) => (
-            <button key={opt.id} onClick={()=>setMode(opt.id)} className="press"
-              style={{ background:opt.bg, borderRadius:22, padding:'28px 16px', display:'flex', flexDirection:'column',
-                alignItems:'center', gap:12, border:'none', animation:`fadeUp 0.25s ${i*0.06}s ease both` }}>
-              <span style={{ width:36, height:36, color:opt.color }}>{opt.icon}</span>
-              <span style={{ fontSize:15, fontWeight:800, color:opt.color }}>{opt.label}</span>
+    {mode&&<div style={{padding:'12px 16px 0',display:'flex',flexDirection:'column',gap:16}}>
+      {mode==='note'&&<textarea autoFocus value={text} onChange={e=>setText(e.target.value)}
+        placeholder="What's on your mind…" rows={6}
+        style={{width:'100%',background:'#fff',border:'2px solid var(--border)',borderRadius:18,padding:16,
+          fontSize:16,lineHeight:1.6,color:'var(--text)',resize:'none',outline:'none',fontFamily:'Nunito,sans-serif'}}/>}
+
+      {mode==='voice'&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:16,padding:'20px 0'}}>
+        {previewURL==='__noperm__'
+          ?<p style={{color:'var(--rose)',fontWeight:700,textAlign:'center',padding:'0 24px'}}>Microphone access needed. Please allow it in your browser settings.</p>
+          :blob?<>
+            <audio controls src={previewURL} style={{width:'100%'}}/>
+            <button onClick={reset} className="press" style={{fontSize:13,color:'var(--muted)',background:'none',border:'none',fontWeight:700}}>Re-record</button>
+          </>:<>
+            <button onPointerDown={()=>startRec('voice')} onPointerUp={stopRec} onPointerLeave={recording?stopRec:undefined} className="press"
+              style={{width:120,height:120,borderRadius:'50%',border:'none',
+                background:recording?'#e87878':'#fde8ef',
+                boxShadow:recording?'0 0 0 12px #e8787830':'0 6px 24px rgba(0,0,0,0.12)',
+                display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.2s'}}>
+              <span style={{width:48,height:48,color:recording?'#fff':'#c0507a'}}><I.Mic/></span>
             </button>
-          ))}
+            <p style={{fontSize:13,color:'var(--muted)',fontWeight:700}}>
+              {recording?<span className="pulse-anim">● Recording… release to stop</span>:'Hold to record'}
+            </p>
+          </>
+        }
+      </div>}
+
+      {mode==='video'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+        {previewURL==='__noperm__'
+          ?<p style={{color:'var(--rose)',fontWeight:700,textAlign:'center'}}>Camera access needed.</p>
+          :<video ref={vidRef} controls={!!blob} autoPlay={!blob} muted={!blob} style={{borderRadius:18,background:'#111',minHeight:220,maxHeight:320}}/>
+        }
+        {!blob&&previewURL!=='__noperm__'&&<Btn onClick={recording?stopRec:()=>startRec('video')} bg={recording?'#e87878':'#6da0c8'} style={{width:'100%'}}>
+          {recording?'⏹ Stop Recording':'⏺ Start Recording'}
+        </Btn>}
+        {blob&&<button onClick={reset} className="press" style={{fontSize:13,color:'var(--muted)',background:'none',border:'none',fontWeight:700,alignSelf:'center'}}>Re-record</button>}
+      </div>}
+
+      {mode==='photo'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+        {blob?<>
+          <img src={previewURL} alt="" style={{width:'100%',borderRadius:18,maxHeight:300,objectFit:'cover'}}/>
+          <button onClick={()=>{reset();if(photoRef.current)photoRef.current.value='';}} className="press"
+            style={{fontSize:13,color:'var(--muted)',background:'none',border:'none',fontWeight:700,alignSelf:'center'}}>Retake</button>
+        </>:<button onClick={()=>photoRef.current?.click()} className="press"
+          style={{borderRadius:18,border:'2px dashed #9ab890',background:'#e4f2ec',padding:'40px 20px',
+            display:'flex',flexDirection:'column',alignItems:'center',gap:10}}>
+          <span style={{width:40,height:40,color:'#3d8a72'}}><I.Camera/></span>
+          <span style={{fontSize:15,fontWeight:800,color:'#3d8a72'}}>Tap to take a photo</span>
+        </button>}
+        <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{display:'none'}}/>
+      </div>}
+
+      <div>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Tag it (optional)</p>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {TAGS.map(t=><TagChip key={t.id} tag={t} active={tags.includes(t.id)} onClick={()=>toggleTag(t.id)}/>)}
         </div>
-      )}
+      </div>
 
-      {mode && (
-        <div style={{ padding:'12px 16px 0', display:'flex', flexDirection:'column', gap:16 }}>
-
-          {/* NOTE */}
-          {mode==='note' && (
-            <textarea autoFocus value={text} onChange={e=>setText(e.target.value)} placeholder="What's on your mind…" rows={6}
-              style={{ width:'100%', background:'#fff', border:'2px solid var(--border)', borderRadius:18, padding:16,
-                fontSize:16, lineHeight:1.6, color:'var(--text)', resize:'none', outline:'none', fontFamily:'Nunito,sans-serif' }} />
-          )}
-
-          {/* VOICE */}
-          {mode==='voice' && (
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16, padding:'20px 0' }}>
-              {previewURL==='__no_permission__'
-                ? <p style={{ color:'var(--rose)', fontWeight:700, textAlign:'center', padding:'0 24px' }}>Microphone access needed. Allow it in browser settings.</p>
-                : blob ? (
-                  <>
-                    <audio controls src={previewURL} style={{ width:'100%' }} />
-                    <button onClick={reset} className="press" style={{ fontSize:13, color:'var(--muted)', background:'none', border:'none', fontWeight:700 }}>Re-record</button>
-                  </>
-                ) : (
-                  <>
-                    <button onPointerDown={()=>startRec('voice')} onPointerUp={stopRec} onPointerLeave={recording?stopRec:undefined} className="press"
-                      style={{ width:120, height:120, borderRadius:'50%', border:'none',
-                        background: recording ? '#e87878' : '#fde8ef',
-                        boxShadow:  recording ? '0 0 0 12px #e8787830' : '0 6px 24px rgba(0,0,0,0.12)',
-                        display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.2s' }}>
-                      <span style={{ width:48, height:48, color: recording ? '#fff' : '#c0507a' }}><I.Mic /></span>
-                    </button>
-                    <p style={{ fontSize:13, color:'var(--muted)', fontWeight:700 }}>
-                      {recording ? <span className="pulse-anim">● Recording… release to stop</span> : 'Hold to record'}
-                    </p>
-                  </>
-                )
-              }
-            </div>
-          )}
-
-          {/* VIDEO */}
-          {mode==='video' && (
-            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-              {previewURL==='__no_permission__'
-                ? <p style={{ color:'var(--rose)', fontWeight:700, textAlign:'center' }}>Camera access needed.</p>
-                : <video ref={vidRef} controls={!!blob} autoPlay={!blob} muted={!blob} style={{ borderRadius:18, background:'#111', minHeight:220, maxHeight:320 }} />
-              }
-              {!blob && previewURL!=='__no_permission__' && (
-                <Btn onClick={recording ? stopRec : ()=>startRec('video')} bg={recording?'#e87878':'#6da0c8'} style={{ width:'100%' }}>
-                  {recording ? '⏹ Stop Recording' : '⏺ Start Recording'}
-                </Btn>
-              )}
-              {blob && <button onClick={reset} className="press" style={{ fontSize:13, color:'var(--muted)', background:'none', border:'none', fontWeight:700, alignSelf:'center' }}>Re-record</button>}
-            </div>
-          )}
-
-          {/* PHOTO */}
-          {mode==='photo' && (
-            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-              {blob ? (
-                <>
-                  <img src={previewURL} alt="" style={{ width:'100%', borderRadius:18, maxHeight:300, objectFit:'cover' }} />
-                  <button onClick={()=>{reset();if(photoRef.current)photoRef.current.value='';}} className="press"
-                    style={{ fontSize:13, color:'var(--muted)', background:'none', border:'none', fontWeight:700, alignSelf:'center' }}>Retake</button>
-                </>
-              ) : (
-                <button onClick={()=>photoRef.current?.click()} className="press"
-                  style={{ borderRadius:18, border:'2px dashed #9ab890', background:'#e4f2ec', padding:'40px 20px',
-                    display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-                  <span style={{ width:40, height:40, color:'#3d8a72' }}><I.Camera /></span>
-                  <span style={{ fontSize:15, fontWeight:800, color:'#3d8a72' }}>Tap to take a photo</span>
-                </button>
-              )}
-              <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display:'none' }} />
-            </div>
-          )}
-
-          {/* TAGS */}
-          <div>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Tag it (optional)</p>
-            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-              {TAGS.map(t => <TagChip key={t.id} tag={t} active={tags.includes(t.id)} onClick={()=>toggleTag(t.id)} />)}
-            </div>
-          </div>
-
-          <Btn onClick={save} bg='#6aaf98' disabled={!canSave||saving} style={{ width:'100%', marginTop:4 }}>
-            {saving ? <span className="pulse-anim">Saving…</span> : <><span style={{ width:20, height:20 }}><I.Check /></span> Save Memory</>}
-          </Btn>
-        </div>
-      )}
-    </div>
-  );
+      <Btn onClick={save} bg='#6aaf98' disabled={!canSave||saving} style={{width:'100%',marginTop:4}}>
+        {saving?<span className="pulse-anim">Saving…</span>:<><span style={{width:20,height:20}}><I.Check/></span> Save Memory</>}
+      </Btn>
+    </div>}
+  </div>;
 }
 
-// ─── UNIFIED TIMELINE ─────────────────────────────────────────────────────────
-// Merges memories + logs + tasks into one sorted feed. Single source of truth.
-
-const LOG_META = {
-  note:                { emoji:'📝', label:'NOTE',      color:'#6da0c8', bg:'#e3eef8' },
-  voice:               { emoji:'🎤', label:'VOICE',     color:'#c0507a', bg:'#fde8ef' },
-  photo:               { emoji:'📷', label:'PHOTO',     color:'#3d8a72', bg:'#e4f2ec' },
-  video:               { emoji:'🎥', label:'VIDEO',     color:'#a87030', bg:'#faf0d8' },
-  med_taken:           { emoji:'💊', label:'MED',       color:'#9a7ec8', bg:'#f0eafa' },
-  task_created:        { emoji:'🔔', label:'REMINDER',  color:'#d4a84b', bg:'#faf0d8' },
-  reminder_triggered:  { emoji:'⏰', label:'ALERT',     color:'#d47a7a', bg:'#faeaea' },
-  task_done:           { emoji:'✅', label:'DONE',      color:'#6aaf98', bg:'#e4f2ec' },
+// ── UNIFIED TIMELINE ──────────────────────────────────────────────────────────
+const LOG_META={
+  note:               {emoji:'📝',label:'NOTE',   color:'#6da0c8',bg:'#e3eef8'},
+  voice:              {emoji:'🎤',label:'VOICE',  color:'#c0507a',bg:'#fde8ef'},
+  photo:              {emoji:'📷',label:'PHOTO',  color:'#3d8a72',bg:'#e4f2ec'},
+  video:              {emoji:'🎥',label:'VIDEO',  color:'#a87030',bg:'#faf0d8'},
+  med_taken:          {emoji:'💊',label:'MED',    color:'#9a7ec8',bg:'#f0eafa'},
+  task_created:       {emoji:'🔔',label:'REMIND', color:'#d4a84b',bg:'#faf0d8'},
+  reminder_triggered: {emoji:'⏰',label:'ALERT',  color:'#d47a7a',bg:'#faeaea'},
+  task_done:          {emoji:'✅',label:'DONE',   color:'#6aaf98',bg:'#e4f2ec'},
 };
 
-function UnifiedTimeline({ data, navigate }) {
-  const [expandedId, setExpanded] = useState(null);
-  const toggle = id => setExpanded(p=>p===id?null:id);
+function UnifiedTimeline({data,navigate}){
+  const [expandedId,setExpanded]=useState(null);
+  const toggle=id=>setExpanded(p=>p===id?null:id);
 
-  // Build combined feed from logs (every feature appends here) + any tasks events
-  const feed = useMemo(() => {
-    const entries = [...(data.logs||[])];
-    // Add task completions that might not be in logs (backwards compat)
-    (data.tasks||[]).forEach(t => {
-      if (t.completedAt && !entries.find(e=>e.id===`taskdone_${t.id}`)) {
-        entries.push({ id:`taskdone_${t.id}`, timestamp:t.completedAt, type:'task_done', label:t.text, detail:'' });
-      }
-    });
-    return entries.sort((a,b)=>b.timestamp-a.timestamp);
-  }, [data.logs, data.tasks]);
+  const feed=useMemo(()=>{
+    return [...(data.logs||[])].sort((a,b)=>b.timestamp-a.timestamp);
+  },[data.logs]);
 
-  const today    = new Date().toDateString();
-  const todayF   = feed.filter(e => new Date(e.timestamp).toDateString()===today);
-  const olderF   = feed.filter(e => new Date(e.timestamp).toDateString()!==today);
+  const today=new Date().toDateString();
+  const todayF=feed.filter(e=>new Date(e.timestamp).toDateString()===today);
+  const olderF=feed.filter(e=>new Date(e.timestamp).toDateString()!==today);
 
-  function LogRow({ entry }) {
-    const meta = LOG_META[entry.type] || { emoji:'📋', label: entry.type.toUpperCase(), color:'var(--muted)', bg:'#f0ece8' };
-    // If it's a memory type and expanded, render the full MemCard
-    const mem = (entry.type==='note'||entry.type==='voice'||entry.type==='photo'||entry.type==='video')
-      ? data.memories.find(m=>m.timestamp===entry.timestamp || `log_${m.id}`===entry.id)
-      : null;
-    const isExp = expandedId===entry.id;
-    return (
-      <div onClick={()=>mem&&toggle(entry.id)} className={mem?'press':''} style={{ background:'#fff', borderRadius:18, marginBottom:8, boxShadow:'0 2px 12px rgba(0,0,0,0.055)', overflow:'hidden' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px' }}>
-          {/* Time */}
-          <span style={{ fontSize:12, fontWeight:800, color:'var(--muted)', minWidth:50, flexShrink:0 }}>
-            {fmt.time(entry.timestamp)}
-          </span>
-          {/* Type badge */}
-          <span style={{ fontSize:11, fontWeight:800, padding:'3px 8px', borderRadius:50, background:meta.bg, color:meta.color, flexShrink:0 }}>
-            {meta.emoji} {meta.label}
-          </span>
-          {/* Detail */}
-          <p style={{ fontSize:13, fontWeight:600, color:'var(--text)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-            {entry.label || entry.detail || '—'}
-          </p>
-        </div>
-        {isExp && mem && (
-          <div className="fade-up" style={{ padding:'0 14px 14px' }}>
-            {mem.type==='note'
-              ? <p style={{ fontSize:14, lineHeight:1.7 }}>{mem.text}</p>
-              : <MediaPlayer idbKey={mem.idbKey} type={mem.type} />
-            }
-            {(mem.tags||[]).length>0 && (
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
-                {mem.tags.map(t => { const tag=TAGS.find(x=>x.id===t); return tag ? <span key={t} style={{ fontSize:12, fontWeight:700, padding:'3px 9px', borderRadius:50, background:tag.bg, color:tag.color }}>{tag.emoji} {tag.label}</span> : null; })}
-              </div>
-            )}
-          </div>
-        )}
+  function LogRow({entry}){
+    const meta=LOG_META[entry.type]||{emoji:'📋',label:entry.type?.toUpperCase()||'',color:'var(--muted)',bg:'#f0ece8'};
+    const mem=['note','voice','photo','video'].includes(entry.type)
+      ?data.memories.find(m=>`log_${m.id}`===entry.id||m.timestamp===entry.timestamp)
+      :null;
+    const isExp=expandedId===entry.id;
+    return <div onClick={()=>mem&&toggle(entry.id)} className={mem?'press':''}
+      style={{background:'#fff',borderRadius:18,marginBottom:8,boxShadow:'0 2px 12px rgba(0,0,0,0.055)',overflow:'hidden'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px'}}>
+        <span style={{fontSize:12,fontWeight:800,color:'var(--muted)',minWidth:48,flexShrink:0}}>{fmt.time(entry.timestamp)}</span>
+        <span style={{fontSize:11,fontWeight:800,padding:'3px 8px',borderRadius:50,background:meta.bg,color:meta.color,flexShrink:0}}>{meta.emoji} {meta.label}</span>
+        <p style={{fontSize:13,fontWeight:600,color:'var(--text)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{entry.label||entry.detail||'—'}</p>
       </div>
-    );
+      {isExp&&mem&&<div className="fade-up" style={{padding:'0 14px 14px'}}>
+        {mem.type==='note'?<p style={{fontSize:14,lineHeight:1.7}}>{mem.text}</p>:<MediaPlayer idbKey={mem.idbKey} type={mem.type}/>}
+        {(mem.tags||[]).length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:10}}>
+          {mem.tags.map(t=>{const tag=TAGS.find(x=>x.id===t);return tag?<span key={t} style={{fontSize:12,fontWeight:700,padding:'3px 9px',borderRadius:50,background:tag.bg,color:tag.color}}>{tag.emoji} {tag.label}</span>:null;})}
+        </div>}
+      </div>}
+    </div>;
   }
 
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:90 }}>
-      <Header title="Timeline" onBack={()=>navigate('home')} />
-      <div style={{ padding:'4px 16px 0' }}>
-        <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:10 }}>{fmt.date(Date.now())}</p>
-        {todayF.length===0 && (
-          <div style={{ textAlign:'center', padding:'28px 0' }}>
-            <p style={{ fontSize:36 }}>🌿</p>
-            <p style={{ color:'var(--muted)', fontWeight:700, marginTop:8 }}>Nothing logged today</p>
-          </div>
-        )}
-        {todayF.map(e => <LogRow key={e.id} entry={e} />)}
-        {olderF.length>0 && (
-          <>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', margin:'14px 0 10px' }}>Earlier</p>
-            {olderF.map(e => <LogRow key={e.id} entry={e} />)}
-          </>
-        )}
-        {feed.length===0 && (
-          <p style={{ textAlign:'center', color:'var(--muted)', fontWeight:600, marginTop:40 }}>
-            Every note, medication, and reminder will appear here.
-          </p>
-        )}
-      </div>
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:90}}>
+    <Header title="Timeline" onBack={()=>navigate('home')}/>
+    <div style={{padding:'4px 16px 0'}}>
+      <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:10}}>{fmt.date(Date.now())}</p>
+      {todayF.length===0&&<div style={{textAlign:'center',padding:'28px 0'}}>
+        <p style={{fontSize:36}}>🌿</p>
+        <p style={{color:'var(--muted)',fontWeight:700,marginTop:8}}>Nothing logged today</p>
+      </div>}
+      {todayF.map(e=><LogRow key={e.id} entry={e}/>)}
+      {olderF.length>0&&<>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',margin:'14px 0 10px'}}>Earlier</p>
+        {olderF.map(e=><LogRow key={e.id} entry={e}/>)}
+      </>}
+      {feed.length===0&&<p style={{textAlign:'center',color:'var(--muted)',fontWeight:600,marginTop:40}}>Every note, medication, and reminder will appear here.</p>}
     </div>
-  );
+  </div>;
 }
 
-// ─── REMINDERS ────────────────────────────────────────────────────────────────
-// task schema: { id, timestamp, text, recur, days[], time, onceDate,
-//               nextDueAt, lastFiredAt, active }
-// Timer engine lives in App so it fires on any screen.
-// This component is purely UI — add/edit/delete/complete tasks.
-
-const DAY_NAMES_FULL  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const DAY_NAMES_SHORT = ['Su','Mo','Tu','We','Th','Fr','Sa'];
-const RECUR_OPTIONS   = [
-  { id:'once',     label:'Once' },
-  { id:'daily',    label:'Every day' },
-  { id:'weekdays', label:'Mon – Fri' },
-  { id:'weekly',   label:'Weekly' },
-  { id:'custom',   label:'Custom days' },
+// ── REMINDERS ─────────────────────────────────────────────────────────────────
+const DAY_SHORT=['Su','Mo','Tu','We','Th','Fr','Sa'];
+const RECUR_OPTIONS=[
+  {id:'once',    label:'Once'},
+  {id:'daily',   label:'Every day'},
+  {id:'weekdays',label:'Mon – Fri'},
+  {id:'weekly',  label:'Weekly'},
+  {id:'custom',  label:'Custom'},
 ];
 
-function Reminders({ data, update, navigate }) {
-  const [showAdd, setShowAdd]   = useState(false);
-  const [text, setText]         = useState('');
-  const [recur, setRecur]       = useState('daily');
-  const [days, setDays]         = useState([]);      // for weekly/custom
-  const [time, setTime]         = useState('08:00');
-  const [useTime, setUseTime]   = useState(true);
-  const [onceDate, setOnceDate] = useState('');      // YYYY-MM-DD for 'once'
+function Reminders({data,update,navigate}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [text,setText]=useState('');
+  const [recur,setRecur]=useState('daily');
+  const [days,setDays]=useState([]);
+  const [time,setTime]=useState('08:00');
+  const [useTime,setUseTime]=useState(true);
+  const [onceDate,setOnceDate]=useState('');
 
-  const active    = (data.tasks||[]).filter(t=>t.active!==false).sort((a,b)=>{
-    const ta=parseTimeStr(a.time)||{h:99,m:99}, tb=parseTimeStr(b.time)||{h:99,m:99};
-    return (ta.h*60+ta.m)-(tb.h*60+tb.m);
+  const active=(data.tasks||[]).filter(t=>t.active!==false).sort((a,b)=>{
+    const ta=parseHHMM(a.time)||{h:99,m:99},tb=parseHHMM(b.time)||{h:99,m:99};
+    return(ta.h*60+ta.m)-(tb.h*60+tb.m);
   });
-  const inactive  = (data.tasks||[]).filter(t=>t.active===false).sort((a,b)=>b.timestamp-a.timestamp).slice(0,10);
+  const inactive=(data.tasks||[]).filter(t=>t.active===false).slice(0,10);
 
-  function toggleDay(d) { setDays(p=>p.includes(d)?p.filter(x=>x!==d):[...p,d]); }
+  function toggleDay(d){setDays(p=>p.includes(d)?p.filter(x=>x!==d):[...p,d]);}
+  function closeForm(){setShowAdd(false);setText('');setRecur('daily');setDays([]);setTime('08:00');setUseTime(true);setOnceDate('');}
 
-  function closeForm() { setShowAdd(false); setText(''); setRecur('daily'); setDays([]); setTime('08:00'); setUseTime(true); setOnceDate(''); }
-
-  function addTask() {
-    if (!text.trim()) return;
-    const ts   = Date.now();
-    const id   = ts.toString();
-    const taskDays = recur==='weekly'   ? days.slice(0,1)   // one day for weekly
-                   : recur==='custom'   ? days
-                   : [];
-    const task = {
-      id, timestamp:ts, text:text.trim(), recur,
-      days: taskDays,
-      time: useTime ? time : null,
-      onceDate: recur==='once' ? (onceDate || new Date().toISOString().slice(0,10)) : null,
-      active: true, lastFiredAt: null,
-      nextDueAt: null, // computed below
-    };
-    task.nextDueAt = computeNextDue(task, ts - 1000); // allow immediate if today
-    update(p=>({
-      ...p,
+  function addTask(){
+    if(!text.trim())return;
+    const ts=Date.now(),id=ts.toString();
+    const taskDays=recur==='weekly'?days.slice(0,1):recur==='custom'?days:[];
+    const task={id,timestamp:ts,text:text.trim(),recur,days:taskDays,
+      time:useTime?time:null,
+      onceDate:recur==='once'?(onceDate||new Date().toISOString().slice(0,10)):null,
+      active:true,lastFiredAt:null,nextDueAt:null};
+    task.nextDueAt=computeNextDue(task,ts-1000);
+    update(p=>({...p,
       tasks:[...(p.tasks||[]),task],
-      logs:[...(p.logs||[]),{ id:`log_tc_${id}`, timestamp:ts, type:'task_created', label:task.text, detail: recurLabel(task)+(task.time?` at ${task.time}`:'') }],
+      logs:[...(p.logs||[]),{id:`log_tc_${id}`,timestamp:ts,type:'task_created',label:task.text,detail:recurLabel(task)+(task.time?` at ${task.time}`:'')}],
     }));
     closeForm();
   }
 
-  function deactivateTask(id) { update(p=>({...p,tasks:p.tasks.map(t=>t.id===id?{...t,active:false,nextDueAt:null}:t)})); }
-  function reactivateTask(task) {
-    const next = computeNextDue(task, Date.now());
-    update(p=>({...p,tasks:p.tasks.map(t=>t.id===task.id?{...t,active:true,nextDueAt:next}:t)}));
-  }
-  function deleteTask(id) { update(p=>({...p,tasks:(p.tasks||[]).filter(t=>t.id!==id)})); }
+  function deactivate(id){update(p=>({...p,tasks:p.tasks.map(t=>t.id===id?{...t,active:false,nextDueAt:null}:t)}));}
+  function reactivate(task){const next=computeNextDue(task,Date.now());update(p=>({...p,tasks:p.tasks.map(t=>t.id===task.id?{...t,active:true,nextDueAt:next}:t)}));}
+  function remove(id){update(p=>({...p,tasks:(p.tasks||[]).filter(t=>t.id!==id)}));}
 
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Reminders" onBack={()=>navigate('home')} />
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:12 }}>
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Reminders" onBack={()=>navigate('home')}/>
+    <div style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:12}}>
 
-        {!showAdd ? (
-          <Btn onClick={()=>setShowAdd(true)} bg='var(--amber)' style={{ width:'100%' }}>
-            <span style={{ width:20, height:20 }}><I.Plus /></span> Add Reminder
+      {!showAdd
+        ?<Btn onClick={()=>setShowAdd(true)} bg='var(--amber)' style={{width:'100%'}}>
+            <span style={{width:20,height:20}}><I.Plus/></span> Add Reminder
           </Btn>
-        ) : (
-          <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 2px 14px rgba(0,0,0,0.065)', display:'flex', flexDirection:'column', gap:12 }}>
-            <textarea autoFocus value={text} onChange={e=>setText(e.target.value)}
-              placeholder="What do you need to remember?" rows={2}
-              style={{ width:'100%', border:'2px solid var(--border)', borderRadius:14, padding:'12px 14px', fontSize:15, color:'var(--text)', outline:'none', fontFamily:'Nunito,sans-serif', resize:'none', background:'#f9f6f2' }} />
+        :<div style={{background:'#fff',borderRadius:20,padding:16,boxShadow:'0 2px 14px rgba(0,0,0,0.065)',display:'flex',flexDirection:'column',gap:12}}>
+          <textarea autoFocus value={text} onChange={e=>setText(e.target.value)}
+            placeholder="What do you need to remember?" rows={2}
+            style={{width:'100%',border:'2px solid var(--border)',borderRadius:14,padding:'12px 14px',fontSize:15,
+              color:'var(--text)',outline:'none',fontFamily:'Nunito,sans-serif',resize:'none',background:'#f9f6f2'}}/>
 
-            {/* Recurrence */}
-            <div>
-              <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:6 }}>Repeat</p>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                {RECUR_OPTIONS.map(opt => (
-                  <button key={opt.id} onClick={()=>{setRecur(opt.id);setDays([]);}} className="press"
-                    style={{ padding:'7px 14px', borderRadius:50, fontSize:13, fontWeight:800, border:'none',
-                      background: recur===opt.id ? 'var(--amber)' : 'var(--amber-l)',
-                      color:      recur===opt.id ? '#fff' : '#a87030' }}>
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Weekly: pick one day */}
-            {recur==='weekly' && (
-              <div>
-                <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:6 }}>Which day</p>
-                <div style={{ display:'flex', gap:6 }}>
-                  {[0,1,2,3,4,5,6].map(d => (
-                    <button key={d} onClick={()=>setDays([d])} className="press"
-                      style={{ flex:1, padding:'8px 2px', borderRadius:10, border:'none', fontSize:12, fontWeight:800,
-                        background: days[0]===d ? 'var(--amber)' : 'var(--amber-l)',
-                        color:      days[0]===d ? '#fff' : '#a87030' }}>
-                      {DAY_NAMES_SHORT[d]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Custom: pick multiple days */}
-            {recur==='custom' && (
-              <div>
-                <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:6 }}>Which days</p>
-                <div style={{ display:'flex', gap:6 }}>
-                  {[0,1,2,3,4,5,6].map(d => (
-                    <button key={d} onClick={()=>toggleDay(d)} className="press"
-                      style={{ flex:1, padding:'8px 2px', borderRadius:10, border:'none', fontSize:12, fontWeight:800,
-                        background: days.includes(d) ? 'var(--amber)' : 'var(--amber-l)',
-                        color:      days.includes(d) ? '#fff' : '#a87030' }}>
-                      {DAY_NAMES_SHORT[d]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Once: pick date */}
-            {recur==='once' && (
-              <div>
-                <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:6 }}>Date</p>
-                <input type="date" value={onceDate} onChange={e=>setOnceDate(e.target.value)}
-                  style={{ border:'2px solid var(--border)', borderRadius:12, padding:'10px 14px', fontSize:15, color:'var(--text)', outline:'none', fontFamily:'Nunito,sans-serif', background:'#fff', width:'100%' }} />
-              </div>
-            )}
-
-            {/* Time */}
-            <div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
-                <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase' }}>Time</p>
-                <button onClick={()=>setUseTime(p=>!p)} className="press"
-                  style={{ fontSize:12, fontWeight:800, padding:'4px 12px', borderRadius:50, border:'none',
-                    background: useTime ? 'var(--amber)' : '#ede9e3',
-                    color:      useTime ? '#fff' : 'var(--muted)' }}>
-                  {useTime ? 'On' : 'Off'}
-                </button>
-              </div>
-              {useTime && (
-                <input type="time" value={time} onChange={e=>setTime(e.target.value)}
-                  style={{ width:'100%', border:'2px solid var(--border)', borderRadius:12, padding:'10px 14px', fontSize:16, color:'var(--text)', outline:'none', fontFamily:'Nunito,sans-serif', background:'#fff' }} />
-              )}
-            </div>
-
-            <div style={{ display:'flex', gap:8 }}>
-              <Btn onClick={addTask} bg='var(--amber)' disabled={!text.trim() || (recur==='weekly'&&!days.length) || (recur==='custom'&&!days.length)} style={{ flex:1 }}>
-                <span style={{ width:18, height:18 }}><I.Check /></span> Save
-              </Btn>
-              <Btn onClick={closeForm} bg='#ede9e3' color='var(--muted)' style={{ padding:'12px 16px' }}>✕</Btn>
-            </div>
-          </div>
-        )}
-
-        {/* Active reminders */}
-        {active.length===0 && !showAdd && (
-          <div style={{ textAlign:'center', padding:'32px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-            <span style={{ fontSize:44 }}>🔔</span>
-            <p style={{ color:'var(--muted)', fontWeight:700 }}>No active reminders</p>
-            <p style={{ color:'var(--muted)', fontSize:13, fontWeight:600, maxWidth:240, textAlign:'center' }}>Add a daily medication reminder, weekly appointment, or any recurring event.</p>
-          </div>
-        )}
-
-        {active.map(task => {
-          const nextStr = task.nextDueAt ? fmt.dateTime(task.nextDueAt) : (task.time ? 'Scheduled' : 'No time set');
-          return (
-            <div key={task.id} style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 2px 14px rgba(0,0,0,0.065)' }}>
-              <div style={{ display:'flex', alignItems:'flex-start', gap:10, marginBottom:12 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:16, fontWeight:800, color:'var(--text)', lineHeight:1.3 }}>{task.text}</p>
-                  <p style={{ fontSize:12, color:'var(--amber)', fontWeight:800, marginTop:4 }}>
-                    🔁 {recurLabel(task)}{task.time ? ` at ${task.time}` : ''}
-                  </p>
-                  <p style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginTop:2 }}>Next: {nextStr}</p>
-                </div>
-                <button onClick={()=>deactivateTask(task.id)} className="press"
-                  style={{ background:'var(--rose-l)', borderRadius:10, border:'none', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <span style={{ width:15, height:15, color:'var(--rose)' }}><I.Trash /></span>
-                </button>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Inactive / completed */}
-        {inactive.length>0 && (
-          <>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:4 }}>Inactive</p>
-            {inactive.map(task => (
-              <div key={task.id} style={{ background:'#fff', borderRadius:16, padding:'12px 16px', boxShadow:'0 1px 8px rgba(0,0,0,0.05)', display:'flex', alignItems:'center', gap:12, opacity:0.7 }}>
-                <span style={{ fontSize:16 }}>🔕</span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.text}</p>
-                  <p style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>{recurLabel(task)}</p>
-                </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  <button onClick={()=>reactivateTask(task)} className="press"
-                    style={{ background:'var(--sage-l)', borderRadius:10, border:'none', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <span style={{ width:15, height:15, color:'#3d8a72' }}><I.Check /></span>
-                  </button>
-                  <button onClick={()=>deleteTask(task.id)} className="press"
-                    style={{ background:'var(--rose-l)', borderRadius:10, border:'none', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <span style={{ width:14, height:14, color:'var(--rose)' }}><I.Trash /></span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-// ─── GROUND ME ────────────────────────────────────────────────────────────────
-// AnchorVideoPanel: reads idbKey from the chosen anchor video, plays it
-function AnchorVideoPanel({ video, autoPlay }) {
-  const src = useIDBUrl(video?.idbKey || null);
-  if (!video) return null;
-  if (!src) return <div style={{ padding:14, color:'var(--muted)', fontWeight:600, textAlign:'center' }}>Loading anchor video…</div>;
-  return <video controls autoPlay={autoPlay} src={src} style={{ borderRadius:18, width:'100%' }} />;
-}
-
-function GroundMe({ data, navigate }) {
-  const now = useLiveClock();
-  const [phase, setPhase] = useState('main');
-  const defaultVideo = (data.anchorVideos||[]).find(v=>v.id===data.defaultAnchorId);
-  const groundingMems = data.memories.filter(m=>m.tags?.includes('grounding')).slice(0,3);
-  const [expandedId, setExpanded] = useState(null);
-  const toggle = id => setExpanded(p=>p===id?null:id);
-
-  if (phase==='okay') return (
-    <div className="pop-in" style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-      background:'linear-gradient(160deg,#d0ede4,#cde0f0)', padding:24, gap:20 }}>
-      <div style={{ fontSize:72 }}>💚</div>
-      <h2 style={{ fontSize:32, fontWeight:900, color:'#1e6b5a', textAlign:'center' }}>You're okay.</h2>
-      <p style={{ color:'#3d8a72', fontWeight:700, textAlign:'center', maxWidth:260 }}>One breath. One moment. That's all.</p>
-      <Btn onClick={()=>navigate('home')} bg='#6aaf98' style={{ marginTop:8, minWidth:200 }}>Back Home</Btn>
-    </div>
-  );
-
-  if (phase==='confused') return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Take it slow" onBack={()=>setPhase('main')} />
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:14 }}>
-        <div style={{ background:'#fff', borderRadius:20, padding:20, boxShadow:'0 2px 14px rgba(0,0,0,0.065)' }}>
-          <p style={{ fontSize:16, fontWeight:800, marginBottom:14 }}>Three things to do:</p>
-          {[['💧','Drink some water'],['🪑','Sit or lie down'],['🌬️','Take one slow breath']].map(([e,t],i)=>(
-            <div key={i} style={{ display:'flex', alignItems:'center', gap:14, background:'#f7f4f0', borderRadius:14, padding:'12px 16px', marginBottom:10 }}>
-              <span style={{ fontSize:24 }}>{e}</span>
-              <span style={{ fontSize:15, fontWeight:700 }}>{t}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ background:'var(--sage-l)', borderRadius:20, padding:20, textAlign:'center' }}>
-          <p style={{ fontSize:42, fontWeight:900, color:'#1e6b5a', letterSpacing:'-0.02em', lineHeight:1 }}>
-            {now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
-          </p>
-          <p style={{ color:'#3d8a72', fontWeight:700, marginTop:6 }}>{fmt.date(now)}</p>
-        </div>
-        {defaultVideo && (
+          {/* Repeat pattern */}
           <div>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Your anchor video</p>
-            <AnchorVideoPanel video={defaultVideo} autoPlay={true} />
+            <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:6}}>Repeat</p>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {RECUR_OPTIONS.map(opt=><button key={opt.id} onClick={()=>{setRecur(opt.id);setDays([]);}} className="press"
+                style={{padding:'7px 14px',borderRadius:50,fontSize:13,fontWeight:800,border:'none',
+                  background:recur===opt.id?'var(--amber)':'var(--amber-l)',
+                  color:recur===opt.id?'#fff':'#a87030'}}>
+                {opt.label}
+              </button>)}
+            </div>
           </div>
-        )}
-        {groundingMems.length>0 && (
-          <div>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Grounding memories</p>
-            {groundingMems.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>toggle(m.id)} />)}
-          </div>
-        )}
-        <p style={{ textAlign:'center', color:'#3d8a72', fontWeight:700, fontSize:15 }}>{data.groundingMessage}</p>
-        <Btn onClick={()=>setPhase('okay')} bg='#6aaf98' style={{ width:'100%' }}>I feel a little better</Btn>
-      </div>
-    </div>
-  );
 
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Ground Me" onBack={()=>navigate('home')} />
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:14 }}>
-        <div style={{ background:'#fff', borderRadius:22, padding:22, textAlign:'center', boxShadow:'0 2px 14px rgba(0,0,0,0.065)' }}>
-          <p style={{ fontSize:50, fontWeight:900, color:'var(--text)', letterSpacing:'-0.03em', lineHeight:1 }}>
-            {now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
-          </p>
-          <p style={{ color:'var(--muted)', fontWeight:700, marginTop:6 }}>{fmt.date(now)}</p>
-          <p style={{ color:'#3d8a72', fontWeight:700, marginTop:12, fontSize:15, lineHeight:1.5 }}>{data.groundingMessage}</p>
-        </div>
-        {defaultVideo ? (
-          <div>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Your anchor video</p>
-            <AnchorVideoPanel video={defaultVideo} autoPlay={true} />
-          </div>
-        ) : (
-          <button onClick={()=>navigate('anchor')} className="press"
-            style={{ background:'var(--plum-l)', border:'2px dashed #9a7ec8', borderRadius:20, padding:'24px 16px',
-              display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
-            <span style={{ fontSize:36 }}>🎬</span>
-            <span style={{ fontSize:15, fontWeight:800, color:'var(--plum)' }}>Add an anchor video</span>
-            <span style={{ fontSize:13, color:'#8060b0' }}>A familiar video to help you feel grounded</span>
-          </button>
-        )}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:4 }}>
-          <Btn onClick={()=>setPhase('okay')} bg='#6aaf98' style={{ flexDirection:'column', height:90, gap:6 }}>
-            <span style={{ fontSize:28 }}>✅</span><span style={{ fontSize:14 }}>I'm okay</span>
-          </Btn>
-          <Btn onClick={()=>setPhase('confused')} bg='#d4a84b' style={{ flexDirection:'column', height:90, gap:6 }}>
-            <span style={{ fontSize:28 }}>🌀</span><span style={{ fontSize:14 }}>Still confused</span>
-          </Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
+          {/* Day picker for weekly/custom */}
+          {(recur==='weekly'||recur==='custom')&&<div>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:6}}>
+              {recur==='weekly'?'Which day':'Which days'}
+            </p>
+            <div style={{display:'flex',gap:5}}>
+              {[0,1,2,3,4,5,6].map(d=><button key={d} onClick={()=>recur==='weekly'?setDays([d]):toggleDay(d)} className="press"
+                style={{flex:1,padding:'8px 2px',borderRadius:10,border:'none',fontSize:12,fontWeight:800,
+                  background:(recur==='weekly'?days[0]===d:days.includes(d))?'var(--amber)':'var(--amber-l)',
+                  color:(recur==='weekly'?days[0]===d:days.includes(d))?'#fff':'#a87030'}}>
+                {DAY_SHORT[d]}
+              </button>)}
+            </div>
+          </div>}
 
-// ─── ANCHOR VIDEOS ────────────────────────────────────────────────────────────
-// AnchorCard reads its own blob from IDB
-function AnchorCard({ v, isDefault, onSetDefault, onDelete }) {
-  const src = useIDBUrl(v.idbKey || null);
-  return (
-    <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 2px 14px rgba(0,0,0,0.065)' }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-        <span style={{ fontSize:15, fontWeight:800, textTransform:'capitalize' }}>{v.type}</span>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {isDefault
-            ? <span style={{ fontSize:12, fontWeight:800, background:'#6aaf98', color:'#fff', padding:'4px 10px', borderRadius:50 }}>Default ✓</span>
-            : <button onClick={onSetDefault} className="press" style={{ fontSize:12, fontWeight:800, background:'var(--sage-l)', color:'#3d8a72', padding:'4px 10px', borderRadius:50, border:'none' }}>Set default</button>
-          }
-          <button onClick={onDelete} className="press" style={{ background:'var(--rose-l)', borderRadius:10, border:'none', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ width:16, height:16, color:'var(--rose)' }}><I.Trash /></span>
-          </button>
+          {/* Date for once */}
+          {recur==='once'&&<div>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:6}}>Date</p>
+            <input type="date" value={onceDate} onChange={e=>setOnceDate(e.target.value)}
+              style={{width:'100%',border:'2px solid var(--border)',borderRadius:12,padding:'10px 14px',fontSize:15,color:'var(--text)',outline:'none',fontFamily:'Nunito,sans-serif',background:'#fff'}}/>
+          </div>}
+
+          {/* Time */}
+          <div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+              <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Time</p>
+              <button onClick={()=>setUseTime(p=>!p)} className="press"
+                style={{fontSize:12,fontWeight:800,padding:'4px 12px',borderRadius:50,border:'none',
+                  background:useTime?'var(--amber)':'#ede9e3',color:useTime?'#fff':'var(--muted)'}}>
+                {useTime?'On':'Off'}
+              </button>
+            </div>
+            {useTime&&<input type="time" value={time} onChange={e=>setTime(e.target.value)}
+              style={{width:'100%',border:'2px solid var(--border)',borderRadius:12,padding:'10px 14px',fontSize:16,color:'var(--text)',outline:'none',fontFamily:'Nunito,sans-serif',background:'#fff'}}/>}
+          </div>
+
+          <div style={{display:'flex',gap:8}}>
+            <Btn onClick={addTask} bg='var(--amber)'
+              disabled={!text.trim()||(recur==='weekly'&&!days.length)||(recur==='custom'&&!days.length)}
+              style={{flex:1}}>
+              <span style={{width:18,height:18}}><I.Check/></span> Save
+            </Btn>
+            <Btn onClick={closeForm} bg='#ede9e3' color='var(--muted)' style={{padding:'12px 16px'}}>✕</Btn>
+          </div>
         </div>
-      </div>
-      {src
-        ? <video controls src={src} style={{ borderRadius:14 }} />
-        : <div style={{ padding:12, color:'var(--muted)', fontWeight:600, fontSize:13 }}>Loading…</div>
       }
-    </div>
-  );
-}
 
-function AnchorVideos({ data, update, navigate }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [recType, setRecType] = useState('morning');
-  const [recording, setRec]  = useState(false);
-  const [previewURL, setPrev] = useState(null);
-  const [blob, setBlob]       = useState(null);
-  const [saving, setSaving]   = useState(false);
-  const vidRef = useRef(null);
-  const recRef = useRef(null);
-  const chunks = useRef([]);
+      {active.length===0&&!showAdd&&<div style={{textAlign:'center',padding:'32px 0',display:'flex',flexDirection:'column',alignItems:'center',gap:10}}>
+        <span style={{fontSize:44}}>🔔</span>
+        <p style={{color:'var(--muted)',fontWeight:700}}>No active reminders</p>
+        <p style={{color:'var(--muted)',fontSize:13,fontWeight:600,maxWidth:240,textAlign:'center'}}>Add a daily medication reminder, weekly appointment, or any recurring event.</p>
+      </div>}
 
-  function reset() { setPrev(null); setBlob(null); }
-
-  async function startRec() {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio:true, video:{ facingMode:'user' } });
-      if (vidRef.current) { vidRef.current.srcObject=s; vidRef.current.play(); }
-      chunks.current = [];
-      const rec = new MediaRecorder(s);
-      rec.ondataavailable = e => chunks.current.push(e.data);
-      rec.onstop = () => {
-        const b   = new Blob(chunks.current, { type:'video/webm' });
-        const url = URL.createObjectURL(b);
-        setBlob(b); setPrev(url);
-        if (vidRef.current) { vidRef.current.srcObject=null; vidRef.current.src=url; }
-        s.getTracks().forEach(t=>t.stop());
-      };
-      rec.start(); recRef.current=rec; setRec(true);
-    } catch { setPrev('__no_permission__'); }
-  }
-
-  function stopRec() { recRef.current?.stop(); setRec(false); }
-
-  async function saveVideo() {
-    if (!blob || previewURL==='__no_permission__') return;
-    setSaving(true);
-    const id     = Date.now().toString();
-    const idbKey = `anchor_${id}`;
-    await idbPut(idbKey, blob);  // persist to IndexedDB
-    const v = { id, type:recType, idbKey, timestamp:Date.now() };
-    update(p => ({
-      ...p,
-      anchorVideos:    [...(p.anchorVideos||[]), v],
-      defaultAnchorId: p.defaultAnchorId || v.id,
-    }));
-    setShowAdd(false); reset(); setSaving(false);
-  }
-
-  async function del(v) {
-    if (v.idbKey) await idbDelete(v.idbKey).catch(()=>{});
-    update(p => ({
-      ...p,
-      anchorVideos:    p.anchorVideos.filter(x=>x.id!==v.id),
-      defaultAnchorId: p.defaultAnchorId===v.id ? null : p.defaultAnchorId,
-    }));
-  }
-
-  const types = ['morning','confused','scared','general'];
-
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Anchor Videos" onBack={()=>navigate('home')} />
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:14 }}>
-        <p style={{ fontSize:14, color:'var(--muted)', fontWeight:600, lineHeight:1.5 }}>
-          Record a message to yourself for moments when you feel lost or confused.
-        </p>
-        {!showAdd && (
-          <Btn onClick={()=>setShowAdd(true)} bg='var(--plum)' style={{ width:'100%' }}>
-            <span style={{ width:20, height:20 }}><I.Plus /></span> Add Anchor Video
-          </Btn>
-        )}
-        {showAdd && (
-          <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 2px 14px rgba(0,0,0,0.065)', display:'flex', flexDirection:'column', gap:12 }}>
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              {types.map(t => (
-                <button key={t} onClick={()=>setRecType(t)} className="press"
-                  style={{ padding:'8px 14px', borderRadius:50, fontSize:13, fontWeight:700, border:'none',
-                    textTransform:'capitalize',
-                    background: recType===t ? 'var(--plum)' : 'var(--plum-l)',
-                    color:       recType===t ? '#fff' : 'var(--plum)' }}>
-                  {t}
-                </button>
-              ))}
+      {active.map(task=>{
+        const nextStr=task.nextDueAt?fmt.dateTime(task.nextDueAt):(task.time?'Scheduled':'No time set');
+        return <div key={task.id} style={{background:'#fff',borderRadius:20,padding:16,boxShadow:'0 2px 14px rgba(0,0,0,0.065)'}}>
+          <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontSize:16,fontWeight:800,color:'var(--text)',lineHeight:1.3}}>{task.text}</p>
+              <p style={{fontSize:12,color:'var(--amber)',fontWeight:800,marginTop:4}}>🔁 {recurLabel(task)}{task.time?` at ${task.time}`:''}</p>
+              <p style={{fontSize:11,color:'var(--muted)',fontWeight:600,marginTop:2}}>Next: {nextStr}</p>
             </div>
-            {previewURL==='__no_permission__'
-              ? <p style={{ color:'var(--rose)', fontWeight:700, textAlign:'center', fontSize:14 }}>Camera access needed.</p>
-              : <video ref={vidRef} controls={!!blob} autoPlay={!blob} muted={!blob} style={{ borderRadius:14, background:'#111', minHeight:180 }} />
-            }
-            <div style={{ display:'flex', gap:8 }}>
-              {!blob ? (
-                <Btn onClick={recording ? stopRec : startRec} bg={recording?'#e87878':'var(--plum)'} style={{ flex:1 }}>
-                  {recording ? '⏹ Stop' : '⏺ Record'}
-                </Btn>
-              ) : (
-                <>
-                  <Btn onClick={saveVideo} bg='#6aaf98' disabled={saving} style={{ flex:1 }}>
-                    {saving ? <span className="pulse-anim">Saving…</span> : <><span style={{width:18,height:18}}><I.Check /></span> Save</>}
-                  </Btn>
-                  <Btn onClick={reset} bg='var(--amber-l)' color='#a87030' style={{ flex:1 }}>Redo</Btn>
-                </>
-              )}
-              <Btn onClick={()=>{setShowAdd(false);reset();setRec(false);}} bg='#ede9e3' color='var(--muted)' style={{ padding:'12px 14px' }}>✕</Btn>
-            </div>
-          </div>
-        )}
-        {(data.anchorVideos||[]).map(v => (
-          <AnchorCard key={v.id} v={v}
-            isDefault={data.defaultAnchorId===v.id}
-            onSetDefault={()=>update(p=>({...p,defaultAnchorId:v.id}))}
-            onDelete={()=>del(v)} />
-        ))}
-        {!(data.anchorVideos||[]).length && !showAdd && (
-          <div style={{ textAlign:'center', padding:'40px 0', display:'flex', flexDirection:'column', gap:10, alignItems:'center' }}>
-            <span style={{ fontSize:48 }}>🎬</span>
-            <p style={{ color:'var(--muted)', fontWeight:700 }}>No anchor videos yet</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── MEDICATION TRACKER ───────────────────────────────────────────────────────
-function MedicationTracker({ data, update, navigate }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [name, setName]       = useState('');
-  const today = new Date().toDateString();
-
-  function addMed()    { if(!name.trim()) return; update(p=>({...p,medications:[...p.medications,{id:Date.now().toString(),name:name.trim(),logs:[]}]})); setName('');setShowAdd(false); }
-  function logMed(id, name)  {
-    const ts = Date.now();
-    update(p=>({
-      ...p,
-      medications:p.medications.map(m=>m.id===id?{...m,logs:[...m.logs,ts]}:m),
-      logs:[...(p.logs||[]),{ id:`log_${ts}`, timestamp:ts, type:'med_taken', label:name, detail:'' }],
-    }));
-  }
-  function delMed(id)  { update(p=>({...p,medications:p.medications.filter(m=>m.id!==id)})); }
-
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Medications" onBack={()=>navigate('home')} />
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:12 }}>
-        {!showAdd ? (
-          <Btn onClick={()=>setShowAdd(true)} bg='var(--plum)' style={{ width:'100%' }}>
-            <span style={{ width:20, height:20 }}><I.Plus /></span> Add Medication
-          </Btn>
-        ) : (
-          <div style={{ background:'#fff', borderRadius:18, padding:14, boxShadow:'0 2px 12px rgba(0,0,0,0.06)', display:'flex', gap:8 }}>
-            <input autoFocus value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addMed()}
-              placeholder="Medication name…"
-              style={{ flex:1, border:'2px solid var(--border)', borderRadius:12, padding:'10px 14px', fontSize:15, color:'var(--text)', outline:'none', fontFamily:'Nunito,sans-serif' }} />
-            <Btn onClick={addMed} bg='var(--plum)' style={{ padding:'10px 16px', fontSize:14 }}>Add</Btn>
-            <Btn onClick={()=>{setShowAdd(false);setName('');}} bg='#ede9e3' color='var(--muted)' style={{ padding:'10px 14px', fontSize:14 }}>✕</Btn>
-          </div>
-        )}
-        {data.medications.map(med => {
-          const todayLogs = med.logs.filter(l=>new Date(l).toDateString()===today);
-          const lastLog   = med.logs.length>0 ? Math.max(...med.logs) : null;
-          return (
-            <div key={med.id} style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 2px 14px rgba(0,0,0,0.065)' }}>
-              <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:14 }}>
-                <div>
-                  <p style={{ fontSize:17, fontWeight:800 }}>{med.name}</p>
-                  {lastLog && <p style={{ fontSize:12, color:'var(--muted)', marginTop:3, fontWeight:600 }}>Last taken: {fmt.dateTime(lastLog)}</p>}
-                </div>
-                <button onClick={()=>delMed(med.id)} className="press" style={{ background:'var(--rose-l)', borderRadius:10, border:'none', width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <span style={{ width:16, height:16, color:'var(--rose)' }}><I.Trash /></span>
-                </button>
-              </div>
-              <Btn onClick={()=>logMed(med.id, med.name)} bg='var(--plum)' style={{ width:'100%', fontSize:17 }}>
-                <span style={{ fontSize:22 }}>💊</span> I took this
-              </Btn>
-              {todayLogs.length>0 && (
-                <div style={{ marginTop:12 }}>
-                  <p style={{ fontSize:11, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:6 }}>Today — {todayLogs.length}×</p>
-                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                    {todayLogs.map((l,i) => <span key={i} style={{ fontSize:12, fontWeight:700, padding:'5px 10px', borderRadius:50, background:'var(--plum-l)', color:'var(--plum)' }}>{fmt.time(l)}</span>)}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {data.medications.length===0 && !showAdd && (
-          <div style={{ textAlign:'center', padding:'48px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-            <span style={{ fontSize:48 }}>💊</span>
-            <p style={{ color:'var(--muted)', fontWeight:700 }}>No medications added yet</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── PROOF I'M OKAY ───────────────────────────────────────────────────────────
-function ProofImOkay({ data, navigate }) {
-  const [expandedId, setExpanded] = useState(null);
-  const goodMems   = data.memories.filter(m=>m.tags?.includes('good'));
-  const recentMems = [...data.memories].sort((a,b)=>b.timestamp-a.timestamp).slice(0,15);
-  const toggle     = id => setExpanded(p=>p===id?null:id);
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Proof I'm Okay" onBack={()=>navigate('home')} />
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:14 }}>
-        <div style={{ background:'linear-gradient(135deg,var(--sage-l),var(--blue-l))', borderRadius:22, padding:'28px 22px', textAlign:'center' }}>
-          <div style={{ fontSize:52, marginBottom:12 }}>💚</div>
-          <p style={{ fontSize:20, fontWeight:900, color:'#1e6b5a', lineHeight:1.3 }}>You have made it through every hard day so far.</p>
-          <p style={{ color:'#3d8a72', fontWeight:700, marginTop:10 }}>Here is the evidence.</p>
-        </div>
-        {goodMems.length>0 && <>
-          <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase' }}>💚 Good moments</p>
-          {goodMems.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>toggle(m.id)} />)}
-        </>}
-        <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginTop:4 }}>📌 Recent memories</p>
-        {recentMems.length>0
-          ? recentMems.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>toggle(m.id)} />)
-          : <div style={{ textAlign:'center', padding:'24px 0' }}><p style={{ color:'var(--muted)', fontWeight:600 }}>Add memories to see them here</p></div>
-        }
-      </div>
-    </div>
-  );
-}
-
-// ─── SETTINGS ─────────────────────────────────────────────────────────────────
-function Settings({ data, update, navigate }) {
-  const [msg,  setMsg]  = useState(data.safeMessage);
-  const [gMsg, setGMsg] = useState(data.groundingMessage);
-  const [saved, setSaved] = useState(false);
-
-  function save() { update({safeMessage:msg,groundingMessage:gMsg}); setSaved(true); setTimeout(()=>setSaved(false),1500); }
-
-  async function clearData() {
-    if (!window.confirm('This will erase all your data. Are you sure?')) return;
-    await idbClear().catch(()=>{});
-    localStorage.removeItem(LS_KEY);
-    window.location.reload();
-  }
-
-  const Field = ({ label, value, onChange, multiline }) => (
-    <div style={{ marginBottom:16 }}>
-      <label style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', display:'block', marginBottom:8 }}>{label}</label>
-      {multiline
-        ? <textarea value={value} onChange={e=>onChange(e.target.value)} rows={3}
-            style={{ width:'100%', border:'2px solid var(--border)', borderRadius:14, padding:'12px 14px', fontSize:15, color:'var(--text)', outline:'none', fontFamily:'Nunito,sans-serif', resize:'none', background:'#fff' }} />
-        : <input value={value} onChange={e=>onChange(e.target.value)}
-            style={{ width:'100%', border:'2px solid var(--border)', borderRadius:14, padding:'12px 14px', fontSize:15, color:'var(--text)', outline:'none', fontFamily:'Nunito,sans-serif', background:'#fff' }} />
-      }
-    </div>
-  );
-
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:100 }}>
-      <Header title="Settings" onBack={()=>navigate('home')} />
-      <div style={{ padding:'12px 16px' }}>
-        <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 2px 14px rgba(0,0,0,0.065)', marginBottom:14 }}>
-          <Field label="Safe message (home screen)" value={msg} onChange={setMsg} />
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ fontSize:14, fontWeight:700 }}>Show on home screen</span>
-            <button onClick={()=>update(p=>({...p,showSafeMessage:!p.showSafeMessage}))} className="press"
-              style={{ width:50, height:28, borderRadius:50, position:'relative', border:'none',
-                background: data.showSafeMessage ? '#6aaf98' : '#ccc', transition:'background 0.2s' }}>
-              <span style={{ position:'absolute', top:3, width:22, height:22, borderRadius:'50%', background:'#fff',
-                left: data.showSafeMessage ? 25 : 3, transition:'left 0.2s', boxShadow:'0 1px 4px rgba(0,0,0,0.2)' }} />
+            <button onClick={()=>deactivate(task.id)} className="press"
+              style={{background:'var(--rose-l)',borderRadius:10,border:'none',width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <span style={{width:15,height:15,color:'var(--rose)'}}><I.Trash/></span>
             </button>
           </div>
-        </div>
-        <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 2px 14px rgba(0,0,0,0.065)', marginBottom:14 }}>
-          <Field label="Grounding message" value={gMsg} onChange={setGMsg} multiline />
-        </div>
-        <Btn onClick={save} bg={saved?'#3d8a72':'#6aaf98'} style={{ width:'100%', marginBottom:12 }}>
-          {saved ? '✓ Saved!' : <><span style={{width:18,height:18}}><I.Check /></span> Save Settings</>}
-        </Btn>
-        <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 2px 14px rgba(0,0,0,0.065)', marginBottom:14 }}>
-          <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:10 }}>Your data</p>
-          <p style={{ fontSize:14, fontWeight:700, lineHeight:2 }}>
-            Memories: {data.memories.length}<br/>
-            Medications: {data.medications.length}<br/>
-            Anchor videos: {(data.anchorVideos||[]).length}<br/>
-            Timeline events: {(data.logs||[]).length}<br/>
-            Reminders: {(data.tasks||[]).length}
-          </p>
-          <p style={{ fontSize:12, color:'var(--muted)', marginTop:10, fontWeight:600, lineHeight:1.5 }}>
-            💾 All audio, video, and photos are stored in your browser's IndexedDB. They survive restarts and aren't limited by localStorage's 5MB cap.
-          </p>
-        </div>
-        <div style={{ textAlign:'center', marginTop:8 }}>
-          <button onClick={clearData} className="press"
-            style={{ fontSize:14, color:'var(--rose)', background:'none', border:'none', fontWeight:700, fontFamily:'Nunito,sans-serif' }}>
-            Clear all data
-          </button>
-        </div>
-      </div>
+        </div>;
+      })}
+
+      {inactive.length>0&&<>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginTop:4}}>Inactive</p>
+        {inactive.map(task=><div key={task.id} style={{background:'#fff',borderRadius:16,padding:'12px 16px',boxShadow:'0 1px 8px rgba(0,0,0,0.05)',display:'flex',alignItems:'center',gap:12,opacity:0.7}}>
+          <span style={{fontSize:16}}>🔕</span>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:14,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.text}</p>
+            <p style={{fontSize:11,color:'var(--muted)',fontWeight:600}}>{recurLabel(task)}</p>
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>reactivate(task)} className="press" style={{background:'var(--sage-l)',borderRadius:10,border:'none',width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <span style={{width:15,height:15,color:'#3d8a72'}}><I.Check/></span>
+            </button>
+            <button onClick={()=>remove(task.id)} className="press" style={{background:'var(--rose-l)',borderRadius:10,border:'none',width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <span style={{width:14,height:14,color:'var(--rose)'}}><I.Trash/></span>
+            </button>
+          </div>
+        </div>)}
+      </>}
     </div>
-  );
+  </div>;
 }
 
-// ─── CALENDAR ─────────────────────────────────────────────────────────────────
-function CalendarScreen({ data, navigate }) {
-  const [viewDate, setViewDate]   = useState(new Date());
-  const [selectedDay, setSelected] = useState(new Date().getDate());
+// ── CALENDAR ──────────────────────────────────────────────────────────────────
+function CalendarScreen({data,navigate}){
+  const [viewDate,setViewDate]=useState(new Date());
+  const [sel,setSel]=useState(new Date().getDate());
 
-  const year  = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const firstDow    = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  const today       = new Date();
-  const isThisMonth = today.getMonth()===month && today.getFullYear()===year;
+  const year=viewDate.getFullYear(),month=viewDate.getMonth();
+  const firstDow=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const today=new Date();
+  const isThisMonth=today.getMonth()===month&&today.getFullYear()===year;
 
-  // Which tasks show on a given calendar date?
-  function tasksForDate(dayNum) {
-    const d   = new Date(year, month, dayNum);
-    const dow = d.getDay();
-    const dateStr = d.toDateString();
-    return (data.tasks||[]).filter(t => {
-      if (t.active === false && t.recur === 'once') return false;
-      if (t.recur === 'daily')    return true;
-      if (t.recur === 'weekdays') return dow >= 1 && dow <= 5;
-      if (t.recur === 'weekly' || t.recur === 'custom') return (t.days||[]).includes(dow);
-      if (t.recur === 'once')     return t.nextDueAt && new Date(t.nextDueAt).toDateString() === dateStr;
+  function tasksForDay(day){
+    const d=new Date(year,month,day),dow=d.getDay(),ds=d.toDateString();
+    return (data.tasks||[]).filter(t=>{
+      if(t.active===false&&t.recur==='once')return false;
+      if(t.recur==='daily')return true;
+      if(t.recur==='weekdays')return dow>=1&&dow<=5;
+      if(t.recur==='weekly'||t.recur==='custom')return(t.days||[]).includes(dow);
+      if(t.recur==='once')return t.nextDueAt&&new Date(t.nextDueAt).toDateString()===ds;
       return false;
     });
   }
+  function memsForDay(day){const ds=new Date(year,month,day).toDateString();return(data.memories||[]).filter(m=>new Date(m.timestamp).toDateString()===ds);}
 
-  // Memories on a given date
-  function memsForDate(dayNum) {
-    const dateStr = new Date(year, month, dayNum).toDateString();
-    return (data.memories||[]).filter(m => new Date(m.timestamp).toDateString() === dateStr);
+  const cells=[];
+  for(let i=0;i<firstDow;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++)cells.push(d);
+
+  const selTasks=sel?tasksForDay(sel):[];
+  const selMems=sel?memsForDay(sel):[];
+
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:90}}>
+    <Header title="Calendar" onBack={()=>navigate('home')}/>
+    <div style={{padding:'0 16px'}}>
+
+      {/* Month nav */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,padding:'0 4px'}}>
+        <button onClick={()=>setViewDate(new Date(year,month-1,1))} className="press"
+          style={{background:'#ede9e3',border:'none',borderRadius:12,padding:'8px 16px',fontWeight:900,fontSize:20,lineHeight:1}}>‹</button>
+        <p style={{fontSize:17,fontWeight:800}}>
+          {new Date(year,month,1).toLocaleDateString([],{month:'long',year:'numeric'})}
+        </p>
+        <button onClick={()=>setViewDate(new Date(year,month+1,1))} className="press"
+          style={{background:'#ede9e3',border:'none',borderRadius:12,padding:'8px 16px',fontWeight:900,fontSize:20,lineHeight:1}}>›</button>
+      </div>
+
+      {/* DOW headers */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:4}}>
+        {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=><p key={d} style={{textAlign:'center',fontSize:11,fontWeight:800,color:'var(--muted)',padding:'2px 0'}}>{d}</p>)}
+      </div>
+
+      {/* Day grid */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}}>
+        {cells.map((day,idx)=>{
+          if(!day)return <div key={idx}/>;
+          const hasTasks=tasksForDay(day).length>0;
+          const hasMems=memsForDay(day).length>0;
+          const isToday=isThisMonth&&day===today.getDate();
+          const isSelected=sel===day;
+          return <button key={idx} onClick={()=>setSel(isSelected?null:day)} className="press"
+            style={{borderRadius:12,border:'none',padding:'6px 2px 8px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+              background:isSelected?'#6aaf98':isToday?'#e4f2ec':'#fff',
+              outline:isToday&&!isSelected?'2px solid #6aaf98':'none',outlineOffset:-2,
+              boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
+            <span style={{fontSize:14,fontWeight:isToday?900:700,color:isSelected?'#fff':isToday?'#1e6b5a':'var(--text)'}}>{day}</span>
+            <div style={{display:'flex',gap:2,justifyContent:'center',minHeight:6}}>
+              {hasTasks&&<span style={{width:5,height:5,borderRadius:'50%',background:isSelected?'#fff':'var(--amber)'}}/>}
+              {hasMems&&<span style={{width:5,height:5,borderRadius:'50%',background:isSelected?'#fff':'var(--sage)'}}/>}
+            </div>
+          </button>;
+        })}
+      </div>
+
+      {/* Legend */}
+      <div style={{display:'flex',gap:16,padding:'10px 4px 4px',justifyContent:'center'}}>
+        <span style={{fontSize:11,fontWeight:700,color:'var(--muted)',display:'flex',alignItems:'center',gap:4}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:'var(--amber)',display:'inline-block'}}/> Reminders
+        </span>
+        <span style={{fontSize:11,fontWeight:700,color:'var(--muted)',display:'flex',alignItems:'center',gap:4}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:'var(--sage)',display:'inline-block'}}/> Memories
+        </span>
+      </div>
+
+      {/* Selected day detail */}
+      {sel&&<div style={{marginTop:12}}>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:10}}>
+          {new Date(year,month,sel).toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'})}
+        </p>
+        {selTasks.length===0&&selMems.length===0&&<p style={{color:'var(--muted)',fontWeight:600,textAlign:'center',padding:'16px 0',fontSize:14}}>Nothing on this day</p>}
+        {selTasks.map(task=><div key={task.id} style={{background:'#fff',borderRadius:16,padding:'12px 16px',marginBottom:8,boxShadow:'0 2px 10px rgba(0,0,0,0.065)',display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:18}}>🔔</span>
+          <div style={{flex:1}}>
+            <p style={{fontSize:15,fontWeight:800}}>{task.text}</p>
+            <p style={{fontSize:12,color:'var(--amber)',fontWeight:700,marginTop:2}}>{task.time?`⏰ ${task.time}  · `:''}{recurLabel(task)}</p>
+          </div>
+        </div>)}
+        {selMems.map(m=><div key={m.id} style={{background:'#fff',borderRadius:16,padding:'12px 16px',marginBottom:8,boxShadow:'0 2px 10px rgba(0,0,0,0.065)',display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:18}}>{MEM_ICON[m.type]||'📝'}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:14,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.type==='note'?(m.text||'—'):`${m.type} recording`}</p>
+            <p style={{fontSize:11,color:'var(--muted)',fontWeight:600,marginTop:1}}>{fmt.time(m.timestamp)}</p>
+          </div>
+        </div>)}
+      </div>}
+    </div>
+  </div>;
+}
+
+// ── GROUND ME ─────────────────────────────────────────────────────────────────
+function AnchorVideoPanel({video,autoPlay}){
+  const src=useIDBUrl(video?.idbKey||null);
+  if(!video)return null;
+  if(!src)return <div style={{padding:14,color:'var(--muted)',fontWeight:600,textAlign:'center'}}>Loading anchor video…</div>;
+  return <video controls autoPlay={autoPlay} src={src} style={{borderRadius:18,width:'100%'}}/>;
+}
+
+function GroundMe({data,navigate}){
+  const now=useLiveClock();
+  const [phase,setPhase]=useState('main');
+  const defaultVideo=(data.anchorVideos||[]).find(v=>v.id===data.defaultAnchorId);
+  const groundingMems=data.memories.filter(m=>m.tags?.includes('grounding')).slice(0,3);
+  const [expandedId,setExpanded]=useState(null);
+  const toggle=id=>setExpanded(p=>p===id?null:id);
+
+  if(phase==='okay')return <div className="pop-in" style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+    background:'linear-gradient(160deg,#d0ede4,#cde0f0)',padding:24,gap:20}}>
+    <div style={{fontSize:72}}>💚</div>
+    <h2 style={{fontSize:32,fontWeight:900,color:'#1e6b5a',textAlign:'center'}}>You're okay.</h2>
+    <p style={{color:'#3d8a72',fontWeight:700,textAlign:'center',maxWidth:260}}>One breath. One moment. That's all.</p>
+    <Btn onClick={()=>navigate('home')} bg='#6aaf98' style={{marginTop:8,minWidth:200}}>Back Home</Btn>
+  </div>;
+
+  if(phase==='confused')return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Take it slow" onBack={()=>setPhase('main')}/>
+    <div style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{background:'#fff',borderRadius:20,padding:20,boxShadow:'0 2px 14px rgba(0,0,0,0.065)'}}>
+        <p style={{fontSize:16,fontWeight:800,marginBottom:14}}>Three things to do:</p>
+        {[['💧','Drink some water'],['🪑','Sit or lie down'],['🌬️','Take one slow breath']].map(([e,t],i)=><div key={i}
+          style={{display:'flex',alignItems:'center',gap:14,background:'#f7f4f0',borderRadius:14,padding:'12px 16px',marginBottom:10}}>
+          <span style={{fontSize:24}}>{e}</span><span style={{fontSize:15,fontWeight:700}}>{t}</span>
+        </div>)}
+      </div>
+      <div style={{background:'var(--sage-l)',borderRadius:20,padding:20,textAlign:'center'}}>
+        <p style={{fontSize:42,fontWeight:900,color:'#1e6b5a',letterSpacing:'-0.02em',lineHeight:1}}>
+          {now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+        </p>
+        <p style={{color:'#3d8a72',fontWeight:700,marginTop:6}}>{fmt.date(now)}</p>
+      </div>
+      {defaultVideo&&<><p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Your anchor video</p>
+        <AnchorVideoPanel video={defaultVideo} autoPlay={true}/></>}
+      {groundingMems.length>0&&<>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Grounding memories</p>
+        {groundingMems.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>toggle(m.id)}/>)}
+      </>}
+      <p style={{textAlign:'center',color:'#3d8a72',fontWeight:700,fontSize:15}}>{data.groundingMessage}</p>
+      <Btn onClick={()=>setPhase('okay')} bg='#6aaf98' style={{width:'100%'}}>I feel a little better</Btn>
+    </div>
+  </div>;
+
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Ground Me" onBack={()=>navigate('home')}/>
+    <div style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{background:'#fff',borderRadius:22,padding:22,textAlign:'center',boxShadow:'0 2px 14px rgba(0,0,0,0.065)'}}>
+        <p style={{fontSize:50,fontWeight:900,color:'var(--text)',letterSpacing:'-0.03em',lineHeight:1}}>
+          {now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+        </p>
+        <p style={{color:'var(--muted)',fontWeight:700,marginTop:6}}>{fmt.date(now)}</p>
+        <p style={{color:'#3d8a72',fontWeight:700,marginTop:12,fontSize:15,lineHeight:1.5}}>{data.groundingMessage}</p>
+      </div>
+      {defaultVideo
+        ?<><p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Your anchor video</p>
+          <AnchorVideoPanel video={defaultVideo} autoPlay={true}/></>
+        :<button onClick={()=>navigate('anchor')} className="press"
+          style={{background:'var(--plum-l)',border:'2px dashed #9a7ec8',borderRadius:20,padding:'24px 16px',
+            display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
+          <span style={{fontSize:36}}>🎬</span>
+          <span style={{fontSize:15,fontWeight:800,color:'var(--plum)'}}>Add an anchor video</span>
+          <span style={{fontSize:13,color:'#8060b0'}}>A familiar video to help you feel grounded</span>
+        </button>
+      }
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:4}}>
+        <Btn onClick={()=>setPhase('okay')} bg='#6aaf98' style={{flexDirection:'column',height:90,gap:6}}>
+          <span style={{fontSize:28}}>✅</span><span style={{fontSize:14}}>I'm okay</span>
+        </Btn>
+        <Btn onClick={()=>setPhase('confused')} bg='#d4a84b' style={{flexDirection:'column',height:90,gap:6}}>
+          <span style={{fontSize:28}}>🌀</span><span style={{fontSize:14}}>Still confused</span>
+        </Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── ANCHOR VIDEOS ─────────────────────────────────────────────────────────────
+function AnchorCard({v,isDefault,onSetDefault,onDelete}){
+  const src=useIDBUrl(v.idbKey||null);
+  return <div style={{background:'#fff',borderRadius:20,padding:16,boxShadow:'0 2px 14px rgba(0,0,0,0.065)'}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+      <span style={{fontSize:15,fontWeight:800,textTransform:'capitalize'}}>{v.type}</span>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        {isDefault
+          ?<span style={{fontSize:12,fontWeight:800,background:'#6aaf98',color:'#fff',padding:'4px 10px',borderRadius:50}}>Default ✓</span>
+          :<button onClick={onSetDefault} className="press" style={{fontSize:12,fontWeight:800,background:'var(--sage-l)',color:'#3d8a72',padding:'4px 10px',borderRadius:50,border:'none'}}>Set default</button>
+        }
+        <button onClick={onDelete} className="press" style={{background:'var(--rose-l)',borderRadius:10,border:'none',width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <span style={{width:16,height:16,color:'var(--rose)'}}><I.Trash/></span>
+        </button>
+      </div>
+    </div>
+    {src?<video controls src={src} style={{borderRadius:14}}/>:<div style={{padding:12,color:'var(--muted)',fontWeight:600,fontSize:13}}>Loading…</div>}
+  </div>;
+}
+
+function AnchorVideos({data,update,navigate}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [recType,setRecType]=useState('morning');
+  const [recording,setRec]=useState(false);
+  const [previewURL,setPrev]=useState(null);
+  const [blob,setBlob]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const vidRef=useRef(null),recRef=useRef(null),chunks=useRef([]);
+
+  function reset(){setPrev(null);setBlob(null);}
+
+  async function startRec(){
+    try{
+      const s=await navigator.mediaDevices.getUserMedia({audio:true,video:{facingMode:'user'}});
+      if(vidRef.current){vidRef.current.srcObject=s;vidRef.current.play();}
+      chunks.current=[];
+      const rec=new MediaRecorder(s);
+      rec.ondataavailable=e=>chunks.current.push(e.data);
+      rec.onstop=()=>{const b=new Blob(chunks.current,{type:'video/webm'});const url=URL.createObjectURL(b);setBlob(b);setPrev(url);if(vidRef.current){vidRef.current.srcObject=null;vidRef.current.src=url;}s.getTracks().forEach(t=>t.stop());};
+      rec.start();recRef.current=rec;setRec(true);
+    }catch{setPrev('__noperm__');}
+  }
+  function stopRec(){recRef.current?.stop();setRec(false);}
+
+  async function saveVideo(){
+    if(!blob||previewURL==='__noperm__')return;
+    setSaving(true);
+    const id=Date.now().toString(),idbKey=`anchor_${id}`;
+    await idbPut(idbKey,blob);
+    const v={id,type:recType,idbKey,timestamp:Date.now()};
+    update(p=>({...p,anchorVideos:[...(p.anchorVideos||[]),v],defaultAnchorId:p.defaultAnchorId||v.id}));
+    setShowAdd(false);reset();setSaving(false);
   }
 
-  const cells = [];
-  for (let i=0; i<firstDow; i++) cells.push(null);
-  for (let d=1; d<=daysInMonth; d++) cells.push(d);
+  async function del(v){
+    if(v.idbKey)await idbDelete(v.idbKey).catch(()=>{});
+    update(p=>({...p,anchorVideos:p.anchorVideos.filter(x=>x.id!==v.id),defaultAnchorId:p.defaultAnchorId===v.id?null:p.defaultAnchorId}));
+  }
 
-  const selTasks = selectedDay ? tasksForDate(selectedDay) : [];
-  const selMems  = selectedDay ? memsForDate(selectedDay)  : [];
-
-  return (
-    <div className="fade-up" style={{ minHeight:'100vh', paddingBottom:90 }}>
-      <Header title="Calendar" onBack={()=>navigate('home')} />
-      <div style={{ padding:'0 16px' }}>
-
-        {/* Month navigator */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, padding:'0 4px' }}>
-          <button onClick={()=>setViewDate(new Date(year,month-1,1))} className="press"
-            style={{ background:'#ede9e3', border:'none', borderRadius:12, padding:'8px 16px', fontWeight:900, color:'var(--text)', fontSize:20, lineHeight:1 }}>‹</button>
-          <p style={{ fontSize:17, fontWeight:800 }}>
-            {new Date(year,month,1).toLocaleDateString([],{ month:'long', year:'numeric' })}
-          </p>
-          <button onClick={()=>setViewDate(new Date(year,month+1,1))} className="press"
-            style={{ background:'#ede9e3', border:'none', borderRadius:12, padding:'8px 16px', fontWeight:900, color:'var(--text)', fontSize:20, lineHeight:1 }}>›</button>
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Anchor Videos" onBack={()=>navigate('home')}/>
+    <div style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:14}}>
+      <p style={{fontSize:14,color:'var(--muted)',fontWeight:600,lineHeight:1.5}}>Record a message to yourself for moments when you feel lost or confused.</p>
+      {!showAdd&&<Btn onClick={()=>setShowAdd(true)} bg='var(--plum)' style={{width:'100%'}}><span style={{width:20,height:20}}><I.Plus/></span> Add Anchor Video</Btn>}
+      {showAdd&&<div style={{background:'#fff',borderRadius:20,padding:16,boxShadow:'0 2px 14px rgba(0,0,0,0.065)',display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {['morning','confused','scared','general'].map(t=><button key={t} onClick={()=>setRecType(t)} className="press"
+            style={{padding:'8px 14px',borderRadius:50,fontSize:13,fontWeight:700,border:'none',textTransform:'capitalize',
+              background:recType===t?'var(--plum)':'var(--plum-l)',color:recType===t?'#fff':'var(--plum)'}}>
+            {t}
+          </button>)}
         </div>
-
-        {/* Day-of-week headers */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom:4 }}>
-          {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>(
-            <p key={d} style={{ textAlign:'center', fontSize:11, fontWeight:800, color:'var(--muted)', padding:'2px 0' }}>{d}</p>
-          ))}
+        {previewURL==='__noperm__'
+          ?<p style={{color:'var(--rose)',fontWeight:700,textAlign:'center',fontSize:14}}>Camera access needed.</p>
+          :<video ref={vidRef} controls={!!blob} autoPlay={!blob} muted={!blob} style={{borderRadius:14,background:'#111',minHeight:180}}/>
+        }
+        <div style={{display:'flex',gap:8}}>
+          {!blob
+            ?<Btn onClick={recording?stopRec:startRec} bg={recording?'#e87878':'var(--plum)'} style={{flex:1}}>{recording?'⏹ Stop':'⏺ Record'}</Btn>
+            :<><Btn onClick={saveVideo} bg='#6aaf98' disabled={saving} style={{flex:1}}>{saving?<span className="pulse-anim">Saving…</span>:<><span style={{width:18,height:18}}><I.Check/></span> Save</>}</Btn>
+              <Btn onClick={reset} bg='var(--amber-l)' color='#a87030' style={{flex:1}}>Redo</Btn></>
+          }
+          <Btn onClick={()=>{setShowAdd(false);reset();setRec(false);}} bg='#ede9e3' color='var(--muted)' style={{padding:'12px 14px'}}>✕</Btn>
         </div>
+      </div>}
+      {(data.anchorVideos||[]).map(v=><AnchorCard key={v.id} v={v} isDefault={data.defaultAnchorId===v.id}
+        onSetDefault={()=>update(p=>({...p,defaultAnchorId:v.id}))} onDelete={()=>del(v)}/>)}
+      {!(data.anchorVideos||[]).length&&!showAdd&&<div style={{textAlign:'center',padding:'40px 0',display:'flex',flexDirection:'column',gap:10,alignItems:'center'}}>
+        <span style={{fontSize:48}}>🎬</span><p style={{color:'var(--muted)',fontWeight:700}}>No anchor videos yet</p>
+      </div>}
+    </div>
+  </div>;
+}
 
-        {/* Day grid */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3 }}>
-          {cells.map((day,idx) => {
-            if (!day) return <div key={idx} />;
-            const tasks  = tasksForDate(day);
-            const mems   = memsForDate(day);
-            const isToday    = isThisMonth && day===today.getDate();
-            const isSelected = selectedDay===day;
-            return (
-              <button key={idx} onClick={()=>setSelected(isSelected ? null : day)} className="press"
-                style={{ borderRadius:12, border:'none', padding:'6px 2px 8px', display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-                  background: isSelected ? '#6aaf98' : isToday ? '#e4f2ec' : '#fff',
-                  outline: isToday && !isSelected ? '2px solid #6aaf98' : 'none',
-                  outlineOffset: -2,
-                  boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-                <span style={{ fontSize:14, fontWeight: isToday ? 900 : 700,
-                  color: isSelected ? '#fff' : isToday ? '#1e6b5a' : 'var(--text)' }}>{day}</span>
-                <div style={{ display:'flex', gap:2, justifyContent:'center', minHeight:6 }}>
-                  {tasks.length>0 && <span style={{ width:5, height:5, borderRadius:'50%', background: isSelected?'#fff':'var(--amber)' }} />}
-                  {mems.length>0  && <span style={{ width:5, height:5, borderRadius:'50%', background: isSelected?'#fff':'var(--sage)' }} />}
-                </div>
-              </button>
-            );
-          })}
+// ── MEDICATION TRACKER ────────────────────────────────────────────────────────
+function MedicationTracker({data,update,navigate}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [name,setName]=useState('');
+  const today=new Date().toDateString();
+
+  function addMed(){if(!name.trim())return;update(p=>({...p,medications:[...p.medications,{id:Date.now().toString(),name:name.trim(),logs:[]}]}));setName('');setShowAdd(false);}
+  function logMed(med){const ts=Date.now();update(p=>({...p,medications:p.medications.map(m=>m.id===med.id?{...m,logs:[...m.logs,ts]}:m),logs:[...(p.logs||[]),{id:`log_med_${ts}`,timestamp:ts,type:'med_taken',label:med.name,detail:''}]}));}
+  function delMed(id){update(p=>({...p,medications:p.medications.filter(m=>m.id!==id)}));}
+
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Medications" onBack={()=>navigate('home')}/>
+    <div style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:12}}>
+      {!showAdd
+        ?<Btn onClick={()=>setShowAdd(true)} bg='var(--plum)' style={{width:'100%'}}><span style={{width:20,height:20}}><I.Plus/></span> Add Medication</Btn>
+        :<div style={{background:'#fff',borderRadius:18,padding:14,boxShadow:'0 2px 12px rgba(0,0,0,0.06)',display:'flex',gap:8}}>
+          <input autoFocus value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addMed()}
+            placeholder="Medication name…"
+            style={{flex:1,border:'2px solid var(--border)',borderRadius:12,padding:'10px 14px',fontSize:15,color:'var(--text)',outline:'none',fontFamily:'Nunito,sans-serif'}}/>
+          <Btn onClick={addMed} bg='var(--plum)' style={{padding:'10px 16px',fontSize:14}}>Add</Btn>
+          <Btn onClick={()=>{setShowAdd(false);setName('');}} bg='#ede9e3' color='var(--muted)' style={{padding:'10px 14px',fontSize:14}}>✕</Btn>
         </div>
-
-        {/* Legend */}
-        <div style={{ display:'flex', gap:16, padding:'10px 4px 4px', justifyContent:'center' }}>
-          <span style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ width:8, height:8, borderRadius:'50%', background:'var(--amber)', display:'inline-block' }} /> Reminders
-          </span>
-          <span style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ width:8, height:8, borderRadius:'50%', background:'var(--sage)', display:'inline-block' }} /> Memories
-          </span>
-        </div>
-
-        {/* Selected day detail */}
-        {selectedDay && (
-          <div style={{ marginTop:12 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:10 }}>
-              {new Date(year,month,selectedDay).toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'})}
-            </p>
-
-            {selTasks.length===0 && selMems.length===0 && (
-              <p style={{ color:'var(--muted)', fontWeight:600, textAlign:'center', padding:'16px 0', fontSize:14 }}>Nothing scheduled</p>
-            )}
-
-            {selTasks.map(task => (
-              <div key={task.id} style={{ background:'#fff', borderRadius:16, padding:'12px 16px', marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.065)', display:'flex', alignItems:'center', gap:10 }}>
-                <span style={{ fontSize:18 }}>🔔</span>
-                <div style={{ flex:1 }}>
-                  <p style={{ fontSize:15, fontWeight:800, color:'var(--text)' }}>{task.text}</p>
-                  <p style={{ fontSize:12, color:'var(--amber)', fontWeight:700, marginTop:2 }}>
-                    {task.time ? `⏰ ${task.time}  · ` : ''}{recurLabel(task)}
-                  </p>
-                </div>
-              </div>
-            ))}
-
-            {selMems.map(m => (
-              <div key={m.id} style={{ background:'#fff', borderRadius:16, padding:'12px 16px', marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.065)', display:'flex', alignItems:'center', gap:10 }}>
-                <span style={{ fontSize:18 }}>{({note:'📝',voice:'🎤',photo:'📷',video:'🎥'})[m.type]||'📝'}</span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {m.type==='note' ? (m.text||'—') : `${m.type} recording`}
-                  </p>
-                  <p style={{ fontSize:11, color:'var(--muted)', fontWeight:600, marginTop:1 }}>{fmt.time(m.timestamp)}</p>
-                </div>
-              </div>
-            ))}
+      }
+      {data.medications.map(med=>{
+        const todayLogs=med.logs.filter(l=>new Date(l).toDateString()===today);
+        const lastLog=med.logs.length>0?Math.max(...med.logs):null;
+        return <div key={med.id} style={{background:'#fff',borderRadius:20,padding:18,boxShadow:'0 2px 14px rgba(0,0,0,0.065)'}}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
+            <div>
+              <p style={{fontSize:17,fontWeight:800}}>{med.name}</p>
+              {lastLog&&<p style={{fontSize:12,color:'var(--muted)',marginTop:3,fontWeight:600}}>Last taken: {fmt.dateTime(lastLog)}</p>}
+            </div>
+            <button onClick={()=>delMed(med.id)} className="press" style={{background:'var(--rose-l)',borderRadius:10,border:'none',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <span style={{width:16,height:16,color:'var(--rose)'}}><I.Trash/></span>
+            </button>
           </div>
-        )}
+          <Btn onClick={()=>logMed(med)} bg='var(--plum)' style={{width:'100%',fontSize:17}}>
+            <span style={{fontSize:22}}>💊</span> I took this
+          </Btn>
+          {todayLogs.length>0&&<div style={{marginTop:12}}>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:6}}>Today — {todayLogs.length}×</p>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {todayLogs.map((l,i)=><span key={i} style={{fontSize:12,fontWeight:700,padding:'5px 10px',borderRadius:50,background:'var(--plum-l)',color:'var(--plum)'}}>{fmt.time(l)}</span>)}
+            </div>
+          </div>}
+        </div>;
+      })}
+      {data.medications.length===0&&!showAdd&&<div style={{textAlign:'center',padding:'48px 0',display:'flex',flexDirection:'column',alignItems:'center',gap:10}}>
+        <span style={{fontSize:48}}>💊</span><p style={{color:'var(--muted)',fontWeight:700}}>No medications added yet</p>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ── PROOF I'M OKAY ────────────────────────────────────────────────────────────
+function ProofImOkay({data,navigate}){
+  const [expandedId,setExpanded]=useState(null);
+  const goodMems=data.memories.filter(m=>m.tags?.includes('good'));
+  const recentMems=[...data.memories].sort((a,b)=>b.timestamp-a.timestamp).slice(0,15);
+  const toggle=id=>setExpanded(p=>p===id?null:id);
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Proof I'm Okay" onBack={()=>navigate('home')}/>
+    <div style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{background:'linear-gradient(135deg,var(--sage-l),var(--blue-l))',borderRadius:22,padding:'28px 22px',textAlign:'center'}}>
+        <div style={{fontSize:52,marginBottom:12}}>💚</div>
+        <p style={{fontSize:20,fontWeight:900,color:'#1e6b5a',lineHeight:1.3}}>You have made it through every hard day so far.</p>
+        <p style={{color:'#3d8a72',fontWeight:700,marginTop:10}}>Here is the evidence.</p>
+      </div>
+      {goodMems.length>0&&<>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase'}}>💚 Good moments</p>
+        {goodMems.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>toggle(m.id)}/>)}
+      </>}
+      <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginTop:4}}>📌 Recent memories</p>
+      {recentMems.length>0
+        ?recentMems.map(m=><MemCard key={m.id} mem={m} expanded={expandedId===m.id} onToggle={()=>toggle(m.id)}/>)
+        :<div style={{textAlign:'center',padding:'24px 0'}}><p style={{color:'var(--muted)',fontWeight:600}}>Add memories to see them here</p></div>
+      }
+    </div>
+  </div>;
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+function Settings({data,update,navigate}){
+  const [msg,setMsg]=useState(data.safeMessage);
+  const [gMsg,setGMsg]=useState(data.groundingMessage);
+  const [saved,setSaved]=useState(false);
+  function save(){update({safeMessage:msg,groundingMessage:gMsg});setSaved(true);setTimeout(()=>setSaved(false),1500);}
+  async function clearData(){
+    if(!window.confirm('This will erase all your data. Are you sure?'))return;
+    await idbClear().catch(()=>{});localStorage.removeItem(LS_KEY);window.location.reload();
+  }
+  const Field=({label,value,onChange,multiline})=><div style={{marginBottom:16}}>
+    <label style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',display:'block',marginBottom:8}}>{label}</label>
+    {multiline
+      ?<textarea value={value} onChange={e=>onChange(e.target.value)} rows={3}
+          style={{width:'100%',border:'2px solid var(--border)',borderRadius:14,padding:'12px 14px',fontSize:15,color:'var(--text)',outline:'none',fontFamily:'Nunito,sans-serif',resize:'none',background:'#fff'}}/>
+      :<input value={value} onChange={e=>onChange(e.target.value)}
+          style={{width:'100%',border:'2px solid var(--border)',borderRadius:14,padding:'12px 14px',fontSize:15,color:'var(--text)',outline:'none',fontFamily:'Nunito,sans-serif',background:'#fff'}}/>
+    }
+  </div>;
+  return <div className="fade-up" style={{minHeight:'100vh',paddingBottom:100}}>
+    <Header title="Settings" onBack={()=>navigate('home')}/>
+    <div style={{padding:'12px 16px'}}>
+      <div style={{background:'#fff',borderRadius:20,padding:18,boxShadow:'0 2px 14px rgba(0,0,0,0.065)',marginBottom:14}}>
+        <Field label="Safe message (home screen)" value={msg} onChange={setMsg}/>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <span style={{fontSize:14,fontWeight:700}}>Show on home screen</span>
+          <button onClick={()=>update(p=>({...p,showSafeMessage:!p.showSafeMessage}))} className="press"
+            style={{width:50,height:28,borderRadius:50,position:'relative',border:'none',background:data.showSafeMessage?'#6aaf98':'#ccc',transition:'background 0.2s'}}>
+            <span style={{position:'absolute',top:3,width:22,height:22,borderRadius:'50%',background:'#fff',left:data.showSafeMessage?25:3,transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.2)'}}/>
+          </button>
+        </div>
+      </div>
+      <div style={{background:'#fff',borderRadius:20,padding:18,boxShadow:'0 2px 14px rgba(0,0,0,0.065)',marginBottom:14}}>
+        <Field label="Grounding message" value={gMsg} onChange={setGMsg} multiline/>
+      </div>
+      <Btn onClick={save} bg={saved?'#3d8a72':'#6aaf98'} style={{width:'100%',marginBottom:12}}>
+        {saved?'✓ Saved!':<><span style={{width:18,height:18}}><I.Check/></span> Save Settings</>}
+      </Btn>
+      <div style={{background:'#fff',borderRadius:20,padding:18,boxShadow:'0 2px 14px rgba(0,0,0,0.065)',marginBottom:14}}>
+        <p style={{fontSize:12,fontWeight:800,color:'var(--muted)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:10}}>Your data</p>
+        <p style={{fontSize:14,fontWeight:700,lineHeight:2}}>
+          Memories: {data.memories.length}<br/>
+          Medications: {data.medications.length}<br/>
+          Anchor videos: {(data.anchorVideos||[]).length}<br/>
+          Timeline events: {(data.logs||[]).length}<br/>
+          Reminders: {(data.tasks||[]).length}
+        </p>
+        <p style={{fontSize:12,color:'var(--muted)',marginTop:10,fontWeight:600,lineHeight:1.5}}>💾 Audio, video and photos are stored in IndexedDB — they persist across sessions.</p>
+      </div>
+      <div style={{textAlign:'center',marginTop:8}}>
+        <button onClick={clearData} className="press" style={{fontSize:14,color:'var(--rose)',background:'none',border:'none',fontWeight:700,fontFamily:'Nunito,sans-serif'}}>Clear all data</button>
       </div>
     </div>
-  );
+  </div>;
 }
-  { id:'home',      label:'Home',     icon:<I.Home /> },
-  { id:'timeline',  label:'Timeline', icon:<I.Clock /> },
-  { id:'ground',    label:'Ground',   icon:<I.Anchor /> },
-  { id:'reminders', label:'Remind',   icon:<I.Bell /> },
-  { id:'meds',      label:'Meds',     icon:<I.Pill /> },
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+const NAV=[
+  {id:'home',     label:'Home',    icon:<I.Home/>},
+  {id:'ground',   label:'Ground',  icon:<I.Anchor/>},
+  {id:'reminders',label:'Remind',  icon:<I.Bell/>},
+  {id:'calendar', label:'Calendar',icon:<I.Clock/>},
+  {id:'meds',     label:'Meds',    icon:<I.Pill/>},
 ];
 
-// ─── APP ──────────────────────────────────────────────────────────────────────
-const NAV = [
-  { id:'home',      label:'Home',     icon:<I.Home /> },
-  { id:'ground',    label:'Ground',   icon:<I.Anchor /> },
-  { id:'reminders', label:'Remind',   icon:<I.Bell /> },
-  { id:'calendar',  label:'Calendar', icon:<I.Clock /> },
-  { id:'meds',      label:'Meds',     icon:<I.Pill /> },
-];
+function App(){
+  const [screen,setScreen]=useState('home');
+  const [data,update]=useStore();
+  const [alerts,setAlerts]=useState([]);
+  const timerRefs=useRef({});
 
-function App() {
-  const [screen, setScreen] = useState('home');
-  const [data, update]      = useStore();
-  const [alerts, setAlerts] = useState([]);   // in-app alert banner queue
-  const timerRefs           = useRef({});
-
-  // ── Global recurring timer engine ─────────────────────────────────────────
-  // Runs at App level so reminders fire on any screen.
-  useEffect(() => {
+  // Global recurring timer engine — fires on any screen
+  useEffect(()=>{
     Object.values(timerRefs.current).forEach(clearTimeout);
-    timerRefs.current = {};
+    timerRefs.current={};
+    (data.tasks||[]).filter(t=>t.active!==false&&t.nextDueAt).forEach(task=>{
+      function fire(){
+        const ts=Date.now();
+        const next=task.recur!=='once'?computeNextDue(task,ts+500):null;
+        setAlerts(a=>[...a,{id:ts.toString(),text:task.text}]);
+        update(p=>({...p,
+          tasks:p.tasks.map(t=>t.id===task.id?{...t,lastFiredAt:ts,nextDueAt:next,active:task.recur!=='once'}:t),
+          logs:[...(p.logs||[]),{id:`rtrig_${task.id}_${ts}`,timestamp:ts,type:'reminder_triggered',label:task.text,detail:''}],
+        }));
+      }
+      const ms=task.nextDueAt-Date.now();
+      if(ms<=500&&!task.lastFiredAt){fire();}
+      else if(ms>0){timerRefs.current[task.id]=setTimeout(fire,ms);}
+    });
+    return()=>Object.values(timerRefs.current).forEach(clearTimeout);
+  },[data.tasks]);
 
-    (data.tasks||[])
-      .filter(t => t.active !== false && t.nextDueAt)
-      .forEach(task => {
-        function fire() {
-          const ts   = Date.now();
-          const next = task.recur !== 'once' ? computeNextDue(task, ts + 500) : null;
-          setAlerts(a => [...a, { id: ts.toString(), text: task.text }]);
-          update(p => ({
-            ...p,
-            tasks: p.tasks.map(t => t.id===task.id
-              ? { ...t, lastFiredAt:ts, nextDueAt:next, active: task.recur!=='once' }
-              : t),
-            logs: [...(p.logs||[]), { id:`rtrig_${task.id}_${ts}`, timestamp:ts, type:'reminder_triggered', label:task.text, detail:'' }],
-          }));
-        }
-        const ms = task.nextDueAt - Date.now();
-        if (ms <= 500 && !task.lastFiredAt) { fire(); }
-        else if (ms > 0) { timerRefs.current[task.id] = setTimeout(fire, ms); }
-      });
+  function dismissAlert(id){setAlerts(a=>a.filter(x=>x.id!==id));}
 
-    return () => Object.values(timerRefs.current).forEach(clearTimeout);
-  }, [data.tasks]);
-
-  function dismissAlert(id) { setAlerts(a => a.filter(x => x.id !== id)); }
-
-  const props = { data, update, navigate: setScreen };
-  const screens = {
-    home:      <HomeScreen        {...props} />,
-    add:       <AddMemory         {...props} />,
-    timeline:  <UnifiedTimeline   {...props} />,
-    ground:    <GroundMe          {...props} />,
-    anchor:    <AnchorVideos      {...props} />,
-    meds:      <MedicationTracker {...props} />,
-    reminders: <Reminders         {...props} />,
-    calendar:  <CalendarScreen    {...props} />,
-    proof:     <ProofImOkay       {...props} />,
-    settings:  <Settings          {...props} />,
+  const props={data,update,navigate:setScreen};
+  const screens={
+    home:      <HomeScreen        {...props}/>,
+    add:       <AddMemory         {...props}/>,
+    timeline:  <UnifiedTimeline   {...props}/>,
+    ground:    <GroundMe          {...props}/>,
+    anchor:    <AnchorVideos      {...props}/>,
+    meds:      <MedicationTracker {...props}/>,
+    reminders: <Reminders         {...props}/>,
+    calendar:  <CalendarScreen    {...props}/>,
+    proof:     <ProofImOkay       {...props}/>,
+    settings:  <Settings          {...props}/>,
   };
 
-  return (
-    <div style={{ maxWidth:480, margin:'0 auto', minHeight:'100vh', background:'var(--bg)' }}>
-      <AlertBanner alerts={alerts} onDismiss={dismissAlert} />
-      <div style={{ overflowY:'auto', minHeight:'100vh', paddingTop: alerts.length ? 74 : 0, transition:'padding-top 0.2s' }}>
-        {screens[screen] || screens.home}
-      </div>
-      <nav style={{ position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)',
-        width:'100%', maxWidth:480, background:'rgba(247,244,240,0.96)', backdropFilter:'blur(16px)',
-        borderTop:'1px solid var(--border)', zIndex:200, paddingBottom:'env(safe-area-inset-bottom)' }}>
-        <div style={{ display:'flex', justifyContent:'space-around', padding:'8px 4px 10px' }}>
-          {NAV.map(item => {
-            const active = screen===item.id;
-            return (
-              <button key={item.id} onClick={()=>setScreen(item.id)} className="press"
-                style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'4px 12px',
-                  border:'none', background:'none', color: active ? 'var(--sage)' : 'var(--muted)' }}>
-                <span style={{ width:24, height:24 }}>{item.icon}</span>
-                <span style={{ fontSize:11, fontWeight:800 }}>{item.label}</span>
-                {active && <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--sage)', marginTop:1 }} />}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+  return <div style={{maxWidth:480,margin:'0 auto',minHeight:'100vh',background:'var(--bg)'}}>
+    <AlertBanner alerts={alerts} onDismiss={dismissAlert}/>
+    <div style={{overflowY:'auto',minHeight:'100vh',paddingTop:alerts.length?72:0,transition:'padding-top 0.2s'}}>
+      {screens[screen]||screens.home}
     </div>
-  );
+    <nav style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',
+      width:'100%',maxWidth:480,background:'rgba(247,244,240,0.96)',backdropFilter:'blur(16px)',
+      borderTop:'1px solid var(--border)',zIndex:200,paddingBottom:'env(safe-area-inset-bottom)'}}>
+      <div style={{display:'flex',justifyContent:'space-around',padding:'8px 4px 10px'}}>
+        {NAV.map(item=>{
+          const active=screen===item.id;
+          return <button key={item.id} onClick={()=>setScreen(item.id)} className="press"
+            style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 12px',
+              border:'none',background:'none',color:active?'var(--sage)':'var(--muted)'}}>
+            <span style={{width:24,height:24}}>{item.icon}</span>
+            <span style={{fontSize:11,fontWeight:800}}>{item.label}</span>
+            {active&&<span style={{width:4,height:4,borderRadius:'50%',background:'var(--sage)',marginTop:1}}/>}
+          </button>;
+        })}
+      </div>
+    </nav>
+  </div>;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
 </html>
